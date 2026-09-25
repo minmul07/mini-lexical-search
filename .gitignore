@@ -1,0 +1,19 @@
+# Build directories
+build/
+cmake-build-*/
+
+# CMake artifacts
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+Testing/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
+
+# AI
+.agents/
+.cursor/
