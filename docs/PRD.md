@@ -5,20 +5,13 @@
 ### 프로젝트명
 
 **Mini Search Engine**
-로컬 문서에 대한 자료구조 기반 전문 검색(Full-text Search) 엔진
+로컬 문서에 대한 전문 검색(Full-text Search) 엔진
 
 ### 목적
 
-다수의 텍스트 문서를 검색할 때 매 검색마다 모든 파일을 순차 탐색하는 대신, 문서를 사전에 **인덱싱(Indexing)** 하여 검색에 적합한 자료구조로 저장하고 빠르게 관련 문서를 검색하는 로컬 검색 엔진을 구현한다.
+다수의 텍스트 문서를 검색할 때 매 검색마다 모든 파일을 순차 탐색하는 대신, 문서를 사전에 인덱싱하여 Line-aware Inverted Index로 저장하고 관련 문서를 검색한다.
 
-프로젝트의 핵심은 검색 기능 자체보다 다음과 같은 자료구조가 실제 검색 시스템에서 어떤 문제를 해결하는지를 구현을 통해 확인하는 것이다.
-
-* Hash Table — 단어 기반 Inverted Index
-* Vector / Posting List — 단어가 등장하는 문서 정보 저장
-* Set — AND / OR 등 복합 질의 처리
-* Heap / Priority Queue — 검색 결과 Top-K 선정
-* Trie — 검색어 자동완성
-* 선택적으로 Graph 기반 ANN 등 — Semantic Search 확장
+색인에는 단어의 등장 횟수(`termFrequency`)와, 그 단어가 나온 **줄 번호**를 함께 저장한다. 점수는 등장 횟수로 계산하고, 검색 결과는 매칭된 문서와 함께 grep처럼 해당 줄에서 검색어가 어떻게 나오는지를 보여 준다.
 
 ---
 
@@ -43,36 +36,46 @@ docN 전체 검색
 ```text
 Documents
     ↓
+줄 단위로 읽기
+    ↓
 Tokenization / Normalization
     ↓
-Indexing
+Indexing - 등장 횟수와 출처 줄 번호 기록
     ↓
-Inverted Index
+Line-aware Inverted Index
 ```
 
-검색 시에는 원본 파일 전체를 다시 읽지 않고 생성된 Index를 조회한다.
+검색 시에는 어떤 문서가 매칭되는지를 Index로 찾는다. 줄 원문은 Top-K로 선정된 파일만 처음부터 한 번 순차적으로 읽으며 고른다.
 
 ```text
-Query: "자료구조"
+Query: "자료구조가"
 
        ↓
 
-Hash Table Lookup
+Indexing과 동일한 Tokenizer / Normalizer
 
        ↓
 
-자료구조
-→ doc3
-→ doc17
-→ doc41
+Index Lookup ("자료구조")
 
        ↓
 
-Ranking
+자료구조 → doc7: tf=6, lines=[1, 2]
 
        ↓
 
-Top-K results
+Ranking (score = termFrequency)
+
+       ↓
+
+Heap Top-K
+
+       ↓
+
+Top-K 파일을 순차 Scan하여 매칭 줄 추출
+  doc7
+    1: ...자료구조...
+    2: ...자료구조...
 ```
 
 ---
@@ -82,11 +85,11 @@ Top-K results
 ## 3.1 핵심 목표
 
 1. 다수의 로컬 문서를 사전에 인덱싱할 수 있다.
-2. 특정 키워드가 포함된 문서를 Inverted Index를 통해 검색할 수 있다.
-3. 검색 결과에 관련도 점수를 부여할 수 있다.
-4. Heap을 이용해 관련도가 높은 상위 K개의 결과를 반환할 수 있다.
-5. 여러 키워드에 대한 AND / OR 검색을 지원한다.
-6. 자료구조 선택에 따른 검색 시간과 메모리 사용 특성을 비교할 수 있다.
+2. 특정 키워드가 포함된 문서를 Line-aware Inverted Index로 검색할 수 있다.
+3. 검색 결과에 그 단어가 나온 줄 번호와 줄 내용을 포함한다.
+4. 검색 결과에 관련도 점수를 부여할 수 있다.
+5. Heap을 이용해 관련도가 높은 상위 K개의 결과를 반환할 수 있다.
+6. 여러 키워드에 대한 AND / OR 검색을 지원한다.
 
 ## 3.2 확장 목표(낮은 우선순위)
 
@@ -125,10 +128,18 @@ documents/
 
 ```text
 1. data_structure.md       score: 8.72
+   12: 자료구조는 데이터를 효율적으로 저장하는 방법이다.
+   40: 배열과 자료구조를 비교하면 다음과 같다.
+
 2. algorithm.md            score: 5.31
+   3: 정렬 알고리즘과 자료구조를 함께 다룬다.
+
 3. cpp_notes.md            score: 3.98
+   18: STL은 자료구조와 알고리즘을 제공한다.
 ```
-TODO
+
+줄 번호는 원본 파일 기준 1부터 시작한다.
+
 ---
 
 # 5. 지원 데이터
@@ -144,7 +155,7 @@ TODO
 
 * UTF-8
 
-초기 구현에서는 파일 형식을 제한하여 문서 Parser 구현보다 자료구조와 검색 알고리즘 구현에 집중한다.
+초기 구현에서는 파일 형식을 제한하여 Indexing과 검색 구현에 집중한다.
 
 ## 이후 확장
 
@@ -159,40 +170,34 @@ TODO
 # 6. 전체 시스템 구조
 
 ```text
-                  ┌──────────────────┐
-                  │ Local Documents  │
-                  └────────┬─────────┘
-                           │
-                           ▼
-                  ┌──────────────────┐
-                  │ Document Loader  │
-                  └────────┬─────────┘
-                           │
-                           ▼
-                  ┌──────────────────┐
-                  │    Tokenizer     │
-                  └────────┬─────────┘
-                           │
-                           ▼
-                  ┌──────────────────┐
-                  │    Normalizer    │
-                  └────────┬─────────┘
-                           │
-                           ▼
+        Local Documents              Search Query
+               │                          │
+               ▼                          │
+        Document Loader                   │
+               │                          │
+               └────────────┬─────────────┘
+                            ▼
+                 Tokenizer / Normalizer
+                            │
+             ┌──────────────┴──────────────┐
+             │ 문서 토큰 → Index에 기록     │
+             │ 질의 토큰 → Index를 조회     │
+             └──────────────┬──────────────┘
+                            ▼
              ┌────────────────────────────┐
-             │      Inverted Index        │
-             │         Hash Table         │
+             │ Line-aware Inverted Index  │
+             │  term → (doc, tf, lines)   │
              └─────────────┬──────────────┘
                            │
-                    ┌──────┴──────┐
-                    │ Search Query│
-                    └──────┬──────┘
                            ▼
                     Posting Lists
                            │
                            ▼
                     Query Processing
-                     AND / OR / NOT
+                     Keyword / AND / OR
+                           │
+                           ▼
+                    SearchCandidate
                            │
                            ▼
                        Ranking
@@ -201,7 +206,7 @@ TODO
                       Top-K Heap
                            │
                            ▼
-                    Search Results
+                   Matching Lines
 ```
 
 ---
@@ -235,38 +240,79 @@ struct Document {
 };
 ```
 
+`tokenCount`는 정규화 이후 토큰 수이며, 문서 길이로 사용한다.
+
 ---
 
 ## 7.2 Tokenization
 
-문서의 원문을 검색 가능한 Token으로 분할한다.
+문서의 원문을 검색 가능한 Token으로 분할한다. Tokenizer는 한 줄의 텍스트만 받고, 줄 번호는 반환하지 않는다. 파일을 읽는 쪽에서 줄 번호를 붙인다. 줄 번호는 1부터 시작하고, 줄의 경계는 개행이다.
+
+```cpp
+class Tokenizer {
+public:
+    virtual std::vector<std::string>
+    tokenize(const std::string& text) = 0;
+};
+```
+
+```cpp
+for (uint32_t line = 1; std::getline(file, text); ++line) {
+    auto tokens = tokenizer.tokenize(text);
+
+    for (const auto& token : tokens) {
+        index.add(token, documentId, line);
+    }
+}
+```
 
 예:
 
 ```text
-"자료구조를 공부하고 있습니다."
+1| 자료구조를 공부하고
+2| 있습니다.
 ```
 
 초기 구현:
 
 ```text
-자료구조를
-공부하고
-있습니다
+줄 1  자료구조를
+줄 1  공부하고
+줄 2  있습니다
 ```
 
-한국어 처리 기능 적용 시:
+한국어 처리 기능 적용 시에도 호출 방식은 같다. 한 줄을 분석기에 넣고, 나온 토큰 전부에 그 줄 번호를 붙인다.
 
 ```text
-자료구조
-공부
+줄 1  자료구조
+줄 1  공부
+줄 2  있다
+```
+
+`index.add`는 같은 문서·같은 토큰에 대해 다음을 갱신한다.
+
+* 토큰이 나올 때마다 `termFrequency`를 1 증가시킨다.
+* `lines`에는 그 줄 번호가 아직 없을 때만 추가한다.
+
+파일을 위에서 아래로 읽으므로, 같은 줄이 연속해서 들어오면 `lines.back()`과 비교해 중복을 거른다. 한 줄에 같은 단어가 여러 번 나와도 줄 번호는 하나이고, 등장 횟수는 `termFrequency`에 남는다.
+
+```text
+1| 자료구조 자료구조 자료구조 자료구조 자료구조
+2| C++에서 자료구조를 배운다
+```
+
+단순 공백 분리에서는 둘째 줄의 `자료구조를`가 `자료구조`와 다른 토큰이다. 형태소 분석 이후 둘 다 `자료구조`로 색인되면 다음과 같다.
+
+```text
+termFrequency = 6
+lines = [1, 2]
 ```
 
 ---
 
-# 8. Inverted Index
+# 8. Line-aware Inverted Index
 
-검색 엔진의 핵심 자료구조이다.
+검색의 기본 색인이다.
 
 일반적인 문서 저장 구조가
 
@@ -277,47 +323,96 @@ Document → Words
 라면 Inverted Index에서는 관계를 반대로 저장한다.
 
 ```text
-Word → Documents
+term
+ ↓
+document
+ ↓
+termFrequency, line numbers
 ```
+
+이 색인의 위치는 줄 번호이다. 정보검색에서 Positional Inverted Index는 문서 안 토큰 오프셋을 저장해 구문 검색과 근접 검색에 쓰는 구조를 가리킨다. 본 프로젝트는 그 구조를 쓰지 않으므로 Line-aware Inverted Index라고 부른다.
 
 예:
 
 ```text
 자료구조
-→ doc1
-→ doc7
-→ doc21
+→ doc1: tf=7, lines=[3, 18, 42]
+→ doc7: tf=2, lines=[12, 40]
+→ doc21: tf=1, lines=[1]
 
 알고리즘
-→ doc2
-→ doc7
+→ doc2: tf=4, lines=[1, 6]
+→ doc7: tf=3, lines=[12, 30]
 
 안드로이드
-→ doc4
-→ doc12
+→ doc4: tf=1, lines=[2]
+→ doc12: tf=5, lines=[1, 15]
 ```
 
-C++ 구조 예시:
+C++ 구조:
 
 ```cpp
 struct Posting {
     DocumentId documentId;
     uint32_t termFrequency;
+    std::vector<uint32_t> lines;
 };
+
+using PostingList = std::vector<Posting>;
 
 std::unordered_map<
     std::string,
-    std::vector<Posting>
+    PostingList
 > invertedIndex;
 ```
 
-각 Token이 Hash Table의 Key가 되고 해당 Token을 포함하는 문서들의 목록이 Posting List가 된다.
+각 Token이 Index의 Key가 되고, 해당 Token이 등장한 문서의 Posting List가 값이 된다.
+
+* `termFrequency`는 그 문서에서 토큰이 나온 횟수이다. 검색 시 점수 계산이 이 값을 읽는다.
+* `lines`는 토큰이 나온 서로 다른 원본 줄 번호이다. Snippet이 보여 줄 줄의 출처이다.
+* `lines.size()`는 Term Frequency가 아니다.
+
+저장 순서:
+
+* Posting List는 `documentId` 오름차순
+* 한 Posting의 `lines`는 중복 없는 오름차순
+
+줄 원문과 줄의 byte offset은 Index에 넣지 않는다.
+
+조회 이후의 흐름:
+
+```text
+Hash Table
+   │
+   │ term lookup
+   ▼
+Posting List
+   │
+   ├── documentId      → 어떤 문서?
+   ├── termFrequency   → 얼마나 많이 등장?
+   └── lines           → 어느 줄?
+         │
+         ▼
+   SearchCandidate
+         │
+         ▼
+      Ranking
+         │
+         ▼
+      Heap Top-K
+         │
+         ▼
+Top-K 원본 파일을 한 번 순차 Scan
+         │
+         ▼
+     Matching Lines
+```
 
 ---
 
 # 9. Posting List
 
-Posting은 특정 단어와 문서 사이의 관계를 표현한다.
+Posting은 특정 단어가 어떤 문서에 몇 번, 어느 줄에 등장했는지를 표현한다.
 
 예:
 
@@ -325,40 +420,47 @@ Posting은 특정 단어와 문서 사이의 관계를 표현한다.
 "자료구조"
 
 [
-    {doc1, frequency=12},
-    {doc7, frequency=5},
-    {doc21, frequency=2}
+    {docId: 1, termFrequency: 7, lines: [3, 18, 42]},
+    {docId: 7, termFrequency: 2, lines: [12, 40]}
 ]
 ```
 
-P0에서는 다음 정보만 저장한다.
+한 줄에 다섯 번, 다른 줄에 한 번 나온 경우는 다음과 같다.
+
+```text
+Posting {
+    documentId = 7,
+    termFrequency = 6,
+    lines = [1, 2]
+}
+```
+
+P0에서 저장하는 정보:
 
 ```text
 Document ID
 Term Frequency
+Line Numbers
 ```
-
-필요한 경우 추후 다음 정보까지 확장할 수 있다.
-
-```text
-Token Position
-Field
-문서 길이
-```
-
-Token Position을 저장하면 구문 검색을 구현할 수 있다.
-
-예:
-
-```text
-"자료 구조"
-```
-
-처럼 인접한 단어를 검색하는 Phrase Search 구현이 가능하다.
 
 ---
 
 # 10. Query Processing
+
+검색 질의 역시 Indexing 시 사용한 것과 동일한 Tokenizer와 Normalizer를 적용한 후 Index를 조회한다. P0의 SimpleTokenizer에도 같은 규칙을 적용한다.
+
+```text
+문서:   "자료구조를" → Kiwi → "자료구조" → Index
+검색어: "자료구조가" → 동일한 Kiwi / Normalizer → "자료구조" → Index Lookup
+```
+
+질의 형태:
+
+```text
+search 자료구조
+search 자료구조 AND 알고리즘
+search 자료구조 OR 안드로이드
+```
 
 ## 단일 키워드
 
@@ -367,13 +469,67 @@ Query:
 자료구조
 ```
 
-Hash Table에서 바로 검색한다.
+Index에서 해당 Token의 Posting List를 가져온다. 매칭 문서를 찾기 위해 검색 대상 문서 전체를 읽지 않는다.
 
 ```cpp
 index.find("자료구조");
 ```
 
-검색 대상 문서 전체를 읽을 필요 없이 해당 Token의 Posting List만 가져온다.
+조회한 Posting은 바꾸지 않는다. 검색 결과는 별도 타입으로 만든다.
+
+```cpp
+struct SearchCandidate {
+    DocumentId documentId;
+    double score;
+    std::vector<uint32_t> matchedLines;
+};
+```
+
+단일 키워드에서는 Posting마다 다음 후보를 만든다.
+
+```text
+score = termFrequency
+matchedLines = lines
+```
+
+---
+
+## 매칭 줄 출력
+
+Index에는 매칭된 줄을 모두 저장한다. 화면에는 문서당 앞에서부터 3줄만 보여 준다.
+
+```cpp
+constexpr size_t MAX_SNIPPETS_PER_DOCUMENT = 3;
+```
+
+```text
+1. textbook.md    score: 8.72
+   12: 자료구조는 데이터를 효율적으로...
+   40: 배열과 자료구조를 비교하면...
+   71: 적절한 자료구조를 선택하면...
+
+   + 14 more matches
+```
+
+줄 순서는 `matchedLines`의 오름차순이다. 3줄을 넘는 개수는 `+ N more matches`로 표시한다.
+
+줄 번호만 저장하고 byte offset은 저장하지 않는다. 일반 텍스트 파일은 1203번째 줄로 바로 이동할 수 없으므로, Top-K로 선정된 문서만 다시 열어 처음부터 한 번 순차적으로 읽으며 Index에 기록된 줄을 추출한다.
+
+```text
+전체 문서 10,000개
+      ↓
+Index Search
+      ↓
+후보 2,000개
+      ↓
+Heap
+      ↓
+Top 10
+      ↓
+10개 파일만 다시 순차 Scan
+```
+
+AND / OR의 `matchedLines`는 매칭에 기여한 각 Posting의 `lines`를 줄 번호 순으로 합친 것이다. 같은 줄은 한 번만 두고, 문서당 3줄 제한은 그대로 적용한다.
 
 ---
 
@@ -383,25 +539,42 @@ index.find("자료구조");
 자료구조 AND 알고리즘
 ```
 
-각 Posting List의 교집합을 계산한다.
+Posting List는 `documentId` 오름차순이다. 별도의 집합을 만들지 않고 두 리스트를 two pointer로 합쳐 교집합을 구한다. 두 단어가 같은 줄에 있는지는 보지 않는다.
 
 ```text
-자료구조
-{1, 3, 7, 12}
+i ↓
+자료구조  [1, 3, 7, 12]
 
-알고리즘
-{2, 3, 7, 15}
+j ↓
+알고리즘  [2, 3, 7, 15]
+```
 
-intersection
+둘 중 `documentId`가 작은 쪽을 한 칸 옮긴다. 값이 같으면 결과에 넣고 둘 다 옮긴다.
 
-{3, 7}
+```text
+결과 → [3, 7]
+```
+
+복잡도는 두 리스트 길이를 n, m이라 할 때 O(n + m)이다. 키워드가 셋 이상이면, `documentId` 순인 `SearchCandidate` 목록을 다음 Posting List와 같은 방식으로 다시 합친다.
+
+교집합에 들어간 문서마다 `SearchCandidate` 하나를 만든다. P0에서 `score`는 각 Posting의 `termFrequency`를 더한 값이다. `matchedLines`는 두 `lines`를 줄 번호 순으로 합친 것이다. Index의 Posting은 그대로 둔다.
+
+```text
+자료구조 Posting ─┐
+                  ├→ QueryProcessor → SearchCandidate
+알고리즘 Posting ─┘
+```
+
+```text
+자료구조 tf=5, 알고리즘 tf=3
+score = 5 + 3 = 8
 ```
 
 ---
 
 ## OR Search
 
-두 Posting List의 합집합을 계산한다.
+AND와 같은 Sorted Posting List Merge로 합집합을 구한다. 같은 문서가 양쪽에 있으면 `SearchCandidate`는 하나이다. P0에서 `score`는 각 `termFrequency`의 합이고, `matchedLines`는 줄 번호 순으로 합친다. Index의 Posting은 그대로 둔다.
 
 ```text
 {1, 2, 3, 7, 12, 15}
@@ -411,18 +584,22 @@ intersection
 
 # 11. Ranking
 
-검색 조건을 만족하는 모든 문서를 동일하게 표시하지 않고 관련도를 계산하여 순위를 부여한다.
+검색 조건을 만족하는 모든 문서를 동일하게 표시하지 않고 관련도를 계산하여 순위를 부여한다. 사용자에게는 상위 K개만 반환한다.
 
 ## P0 Ranking
 
-단순 Term Frequency를 사용한다.
+점수는 `termFrequency`이다.
+
+```text
+score = termFrequency
+```
 
 ```text
 검색어: android
 
-doc1 → 12회
-doc2 → 5회
-doc3 → 2회
+doc1 → termFrequency 12
+doc2 → termFrequency 5
+doc3 → termFrequency 2
 ```
 
 따라서:
@@ -431,13 +608,15 @@ doc3 → 2회
 doc1 > doc2 > doc3
 ```
 
+AND / OR에서 여러 단어가 매칭되면, P0에서는 매칭된 각 단어의 `termFrequency`를 `SearchCandidate.score`에 합산한다. 이 합은 검색 결과의 점수이고, Index에 저장된 `termFrequency`는 단어별로 유지한다.
+
 ---
 
 ## P1 Ranking
 
-TF-IDF 또는 BM25 방식으로 확장한다.
+TF-IDF 또는 BM25 방식으로 확장한다. `termFrequency`를 각 term의 빈도 입력값으로 활용한다. 각 query term의 점수를 구한 뒤 더한다.
 
-이를 통해 모든 문서에서 자주 등장하는 일반적인 단어의 영향력을 낮추고 특정 문서를 잘 구분하는 단어의 중요도를 높인다.
+이를 통해 모든 문서에서 자주 등장하는 일반적인 단어의 영향력을 낮추고 특정 문서를 잘 구분하는 단어의 중요도를 높인다. 문서 길이는 `Document.tokenCount`를 사용한다.
 
 ---
 
@@ -476,7 +655,7 @@ Min Heap (size = K)
 Top-K Results
 ```
 
-Heap은 검색 Index를 저장하는 구조가 아니라 **검색 과정에서 상위 결과를 선택하기 위한 임시 자료구조**로 사용한다.
+Heap은 검색 Index를 저장하는 구조가 아니라 **검색 과정에서 상위 결과를 선택하기 위한 임시 자료구조**로 사용한다. 매칭 줄 원문은 이 Top-K 문서만 다시 열어 순차적으로 읽으며 추출한다.
 
 ---
 
@@ -535,15 +714,7 @@ Indexing 과정에서 발견된 Vocabulary를 Trie에 저장한다.
 
 단순 공백 Tokenizer에서는 서로 다른 네 개의 Token이 된다.
 
-따라서 검색 성능 개선을 위해 Tokenizer 계층을 별도로 구성한다.
-
-```cpp
-class Tokenizer {
-public:
-    virtual std::vector<std::string>
-    tokenize(const std::string& text) = 0;
-};
-```
+따라서 검색 성능 개선을 위해 Tokenizer 계층을 별도로 구성한다. 인터페이스는 7.2와 같다. 한 줄의 텍스트를 받아 토큰 목록만 반환하고, 줄 번호는 파일을 읽는 쪽이 붙인다.
 
 ### SimpleTokenizer
 
@@ -561,10 +732,10 @@ P1 이후 선택적으로 적용한다.
 
 * Kiwi C++ 형태소 분석기
 
-형태소 분석을 통해 조사/어미 등의 기능어를 제거하고 의미 있는 형태소를 Index에 저장한다.
+형태소 분석을 통해 조사/어미 등의 기능어를 제거하고 의미 있는 형태소를 Index에 저장한다. 분석기에는 한 줄만 넣고, 반환된 토큰마다 그 줄 번호를 붙인다. `termFrequency`는 토큰이 나온 횟수만큼 증가한다.
 
 ```text
-자료구조를 공부한다
+12| 자료구조를 공부한다
 
 ↓ Kiwi
 
@@ -576,44 +747,30 @@ P1 이후 선택적으로 적용한다.
 
 ↓
 
-자료구조
-공부
+줄 12  자료구조
+줄 12  공부
 ```
 
 한국어 NLP 구현 자체가 프로젝트의 주요 목표가 되지 않도록 외부 라이브러리를 활용한다.
 
 ---
 
-# 15. 자료구조별 역할
-
-| 자료구조           | 역할                                |
-| -------------- | --------------------------------- |
-| Hash Table     | Token → Posting List 탐색           |
-| Vector         | Posting List 저장                   |
-| Set / 정렬 리스트   | AND / OR 검색                       |
-| Heap           | 검색 결과 Top-K                       |
-| Trie           | 검색어 자동완성                          |
-| Array / Vector | Document Metadata 관리              |
-| Graph          | 향후 ANN Semantic Search 구현 시 활용 가능 |
-
----
-
-# 16. 개발 단계
+# 15. 개발 단계
 
 ## P0 — Core Search Engine
 
-**목표: 검색 엔진의 핵심 자료구조 구현**
+**목표: 줄 번호를 포함한 검색으로 키워드가 나온 줄을 찾는다**
 
 필수 기능:
 
 * TXT / Markdown 문서 읽기
-* Tokenization
-* Inverted Index 생성
-* Hash Table 기반 Token lookup
-* Posting List
+* 줄 단위 Tokenization과 출처 줄 번호 기록
+* Line-aware Inverted Index 생성
+* Posting List (`documentId`, `termFrequency`, `lines`)
 * 단일 Keyword Search
-* 단순 Ranking
-* Top-K 결과
+* 문서당 최대 3개의 매칭 줄 출력
+* `termFrequency` 기반 Ranking
+* Heap을 이용한 Top-K 결과
 * 문서 추가 및 전체 Re-indexing
 
 완료 조건:
@@ -621,33 +778,28 @@ P1 이후 선택적으로 적용한다.
 ```text
 문서 디렉토리 입력
        ↓
-Index 생성
+Line-aware Index 생성
        ↓
 검색어 입력
        ↓
-관련 문서 Top-K 반환
+관련 문서 Top-K와 매칭 줄 반환
 ```
 
 ---
 
 ## P1 — Advanced Lexical Search
 
-**목표: 검색 품질 및 자료구조 활용 확대**
+**목표: 검색 품질 개선**
 
 기능:
 
-* AND / OR 검색
+* AND / OR 검색 (Sorted Posting List Merge)
 * TF-IDF 또는 BM25 Ranking
 * Trie 기반 자동완성
 * 한국어 Tokenization 개선
 * Kiwi 연동 검토
 * Stop Word 처리
 * Index 저장 / 로드
-
-선택 기능:
-
-* Phrase Search
-* Token Position Index
 
 ---
 
@@ -708,7 +860,7 @@ P3는 선택적인 연구/확장 단계이며 프로젝트 핵심 평가 범위�
 
 ---
 
-# 17. 검색 방식 비교
+# 16. 검색 방식 비교
 
 최종 프로젝트에서는 최소 두 가지 검색 방식을 비교한다.
 
@@ -727,9 +879,15 @@ All Documents Scan
 ```text
 Query
   ↓
-Hash Lookup
+Indexing과 동일한 Tokenizer / Normalizer
   ↓
-Posting List
+Index Lookup
+  ↓
+Posting List (문서 + termFrequency + 줄 번호)
+  ↓
+Heap Top-K
+  ↓
+Top-K 파일을 한 번 순차 Scan하여 매칭 줄 추출
 ```
 
 비교 항목:
@@ -747,20 +905,18 @@ Posting List
 10,000 documents
 ```
 
-이를 통해 자료구조 사용에 따른 성능 개선을 실험적으로 확인한다.
-
 ---
 
-# 18. 성공 기준
+# 17. 성공 기준
 
 P0 기준 프로젝트 성공 조건:
 
 1. 최소 수백~수천 개 이상의 문서를 인덱싱할 수 있다.
-2. 검색 시 모든 원본 문서를 다시 읽지 않는다.
-3. Inverted Index를 이용해 키워드가 포함된 문서를 탐색한다.
-4. 관련도에 따라 Top-K 결과를 제공한다.
-5. 동일 데이터에 대해 Naive Search보다 검색 시간이 감소한다.
-6. 사용된 각 자료구조의 역할과 선택 이유를 설명할 수 있다.
+2. 매칭 문서를 찾을 때 모든 원본 문서를 다시 읽지 않는다.
+3. Line-aware Inverted Index로 키워드가 포함된 문서, 등장 횟수, 줄 번호를 탐색한다.
+4. 검색 결과에 해당 줄 번호와 줄 내용을 포함한다.
+5. 관련도에 따라 Top-K 결과를 제공한다.
+6. 동일 데이터에 대해 Naive Search보다 검색 시간이 감소한다.
 
 추가 평가:
 
@@ -772,7 +928,7 @@ P0 기준 프로젝트 성공 조건:
 
 ---
 
-# 19. 비목표 / Out of Scope
+# 18. 비목표 / Out of Scope
 
 기본 프로젝트에서는 다음 기능을 목표로 하지 않는다.
 
@@ -785,29 +941,15 @@ P0 기준 프로젝트 성공 조건:
 * 실시간 인터넷 검색
 * 자체 형태소 분석기 개발
 
-본 프로젝트의 핵심은 검색 서비스를 만드는 것이 아니라 **검색 문제를 적절한 자료구조로 해결하는 과정**에 있다.
-
 ---
 
-# 20. 예상 기술 스택
+# 19. 예상 기술 스택
 
 ### Core
 
 * C++17 이상
 * CMake
 * STL
-
-### 주요 STL 후보
-
-```cpp
-std::unordered_map
-std::vector
-std::set
-std::unordered_set
-std::priority_queue
-```
-
-Trie 등 핵심 자료구조는 직접 구현할 수 있다.
 
 ### Optional
 
@@ -817,11 +959,11 @@ Trie 등 핵심 자료구조는 직접 구현할 수 있다.
 
 ---
 
-# 21. 프로젝트 핵심 설명
+# 20. 프로젝트 핵심 설명
 
 본 프로젝트의 핵심 아이디어는 다음 한 문장으로 정리할 수 있다.
 
-> 모든 문서를 검색 시점에 순차 탐색하는 대신, 문서의 Token과 문서 간 관계를 Inverted Index로 사전에 구조화하여 빠르게 검색하고, Heap 등의 자료구조를 이용해 관련성이 높은 검색 결과를 효율적으로 반환한다.
+> 모든 문서를 검색 시점에 순차 탐색하는 대신, 토큰의 등장 횟수와 나온 줄을 Line-aware Inverted Index로 사전에 저장하여 관련 문서를 찾고, Top-K 문서에서 그 줄이 어떻게 나오는지를 함께 반환한다.
 
 프로젝트가 확장되더라도 중심 구조는 다음과 같이 유지한다.
 
@@ -833,13 +975,12 @@ Trie 등 핵심 자료구조는 직접 구현할 수 있다.
    Lexical Search             Semantic Search
    [Main / P0-P1]             [Optional / P2-P3]
           │                         │
-   Inverted Index               Embedding
-   Hash / Set / Heap                │
-          │                    Vector Search
+   Line-aware Inverted Index   Embedding
+   (문서 + TF + 줄 번호)               │
+          │                         │
           └────────────┬────────────┘
                        │
                  Hybrid Ranking
 ```
 
-따라서 Semantic Search를 추가하더라도 프로젝트의 핵심은 자료구조 기반 Lexical Search Engine으로 유지한다.
-
+Semantic Search를 추가하더라도 프로젝트의 핵심은 Line-aware Inverted Index 기반 Lexical Search Engine으로 유지한다.
