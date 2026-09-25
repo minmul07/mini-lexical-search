@@ -1,4 +1,4 @@
-# Mini Search Engine
+# Mini Lexical Search
 
 로컬 문서(.txt / .md)를 위한 **Line-aware Inverted Index** 기반 전문 검색 엔진.
 
@@ -32,7 +32,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ```bash
 cmake -S . -B build
 cmake --build build -j
-./build/mini_search <documents_directory>
+./build/mini_lexical_search <documents_directory>
 ```
 
 테스트:

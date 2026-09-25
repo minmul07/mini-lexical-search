@@ -32,11 +32,11 @@ Release 빌드는 `-DCMAKE_BUILD_TYPE=Release`로 지정한다.
 ## 실행
 
 ```bash
-./build/mini_search <documents_directory>
+./build/mini_lexical_search <documents_directory>
 ```
 
 ```text
-$ ./build/mini_search docs
+$ ./build/mini_lexical_search docs
 Documents directory: docs
 Type 'search <query>' to search, 'exit' to quit.
 > search 자료구조
@@ -60,9 +60,9 @@ ctest --test-dir build --output-on-failure
 ## 디렉터리 구조
 
 ```text
-search_engine/
+mini-lexical-search/
 ├── CMakeLists.txt
-├── include/mini_search/   # 공개 헤더
+├── include/mini_lexical_search/   # 공개 헤더
 ├── src/                   # 라이브러리 + 실행 파일 (main.cpp)
 ├── tests/                 # CTest 기반 테스트
 └── docs/                  # PRD 및 개발 문서
@@ -74,7 +74,7 @@ search_engine/
 
 실행 환경 스캐폴딩만 구축된 상태이다.
 
-* 완료: CMake 빌드, `mini_search` 실행 파일, 버전 헤더, CTest 스모크 테스트
+* 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, CTest 스모크 테스트
 * 미구현: Tokenizer, Line-aware Inverted Index, 검색, Ranking, Top-K (P0)
 
 ## 빌드 옵션

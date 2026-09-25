@@ -2,13 +2,13 @@
 #include <iostream>
 #include <string>
 
-#include "mini_search/version.hpp"
+#include "mini_lexical_search/version.hpp"
 
 namespace {
 
 void printUsage(const char* program) {
     std::cout
-        << "Mini Search Engine " << mini_search::versionString() << "\n\n"
+        << "Mini Lexical Search " << mini_lexical_search::versionString() << "\n\n"
         << "사용법:\n"
         << "  " << program << " [옵션] <문서_디렉터리>\n\n"
         << "옵션:\n"
@@ -52,7 +52,7 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (arg == "-v" || arg == "--version") {
-            std::cout << "mini_search 버전 " << mini_search::versionString() << "\n";
+            std::cout << "mini_lexical_search 버전 " << mini_lexical_search::versionString() << "\n";
             return 0;
         }
         if (!documentsDirectory.empty()) {

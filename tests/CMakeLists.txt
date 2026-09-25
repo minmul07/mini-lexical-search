@@ -1,7 +1,7 @@
 add_executable(version_test
     version_test.cpp)
 target_link_libraries(version_test
-    PRIVATE mini_search_core)
+    PRIVATE mini_lexical_search_core)
 
 add_test(
     NAME version_test

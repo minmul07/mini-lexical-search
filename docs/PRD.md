@@ -1,10 +1,10 @@
-# Mini Search Engine — PRD
+# Mini Lexical Search — PRD
 
 ## 1. 프로젝트 개요
 
 ### 프로젝트명
 
-**Mini Search Engine**
+**Mini Lexical Search**
 로컬 문서에 대한 전문 검색(Full-text Search) 엔진
 
 ### 목적

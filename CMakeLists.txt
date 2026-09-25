@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(mini_search_engine
+project(mini_lexical_search
     VERSION 0.1.0
     DESCRIPTION "Line-aware Inverted Index based local full-text search engine"
     LANGUAGES CXX)
@@ -15,15 +15,15 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-add_library(mini_search_core
+add_library(mini_lexical_search_core
     src/version.cpp)
-target_include_directories(mini_search_core
+target_include_directories(mini_lexical_search_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(mini_search
+add_executable(mini_lexical_search
     src/main.cpp)
-target_link_libraries(mini_search
-    PRIVATE mini_search_core)
+target_link_libraries(mini_lexical_search
+    PRIVATE mini_lexical_search_core)
 
 include(CTest)
 if(BUILD_TESTING)
