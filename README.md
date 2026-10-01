@@ -52,8 +52,8 @@ ctest --test-dir build --output-on-failure
 
 * **P0** — TXT/Markdown 인덱싱, 단일 키워드 검색, TF Ranking, Top-K, 매칭 줄 출력
 * **P1** — AND/OR 검색, TF-IDF/BM25, Trie 자동완성, 한국어 형태소 분석(Kiwi)
-* **P2** — Semantic Search (Embedding)
-* **P3** — Hybrid / ANN Search
+* **P2** — Hybrid / ANN Search / PDF 인덱싱
+* **P3** — Semantic Search (Embedding)
 
 ## 기술 스택
 
