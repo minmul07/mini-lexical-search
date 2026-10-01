@@ -20,7 +20,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ## 예시
 
 ```text
-> search 자료구조
+> /search 자료구조
 
 1. data_structure.md       score: 8.72
    12: 자료구조는 데이터를 효율적으로 저장하는 방법이다.
@@ -32,7 +32,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ```bash
 cmake -S . -B build
 cmake --build build -j
-./build/mini_lexical_search <documents_directory>
+./build/mini_lexical_search start
 ```
 
 테스트:
@@ -42,6 +42,12 @@ ctest --test-dir build --output-on-failure
 ```
 
 자세한 내용은 [개발 환경](docs/DEVELOPMENT.md)을 참고한다.
+
+앱 실행 후 표준 입력으로 `/index`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. 인덱싱·검색은 현재 미구현 안내를 출력하며, 인덱싱 대상 경로 지정 방식은 추후 정의한다.
+
+`-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 사용할 수 있다.
+
+인덱스는 절대 경로 `/data` 아래에 JSON 파일로 저장·로드할 예정이며, 해당 기능은 P1에서 구현한다.
 
 ## 문서
 

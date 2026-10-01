@@ -32,16 +32,18 @@ Release 빌드는 `-DCMAKE_BUILD_TYPE=Release`로 지정한다.
 ## 실행
 
 ```bash
-./build/mini_lexical_search <documents_directory>
+./build/mini_lexical_search start
 ```
 
 ```text
-$ ./build/mini_lexical_search docs
-Documents directory: docs
-Type 'search <query>' to search, 'exit' to quit.
-> search 자료구조
-(not implemented yet) Indexing and search arrive in P0.
-> exit
+$ ./build/mini_lexical_search start
+Mini Lexical Search started.
+Type '/help' for commands, '/exit' to quit.
+> /index
+(not implemented yet) Indexing arrives in P0.
+> /search 자료구조
+(not implemented yet) Search arrives in P0.
+> /exit
 ```
 
 옵션:
@@ -49,13 +51,22 @@ Type 'search <query>' to search, 'exit' to quit.
 * `-h`, `--help` — 도움말
 * `-v`, `--version` — 버전
 
+### 실행 중 명령
+
+* `/index` — 인덱싱 시작 (현재 미구현 안내 출력)
+* `/search <검색어>` — 검색 (현재 미구현 안내 출력)
+* `/help` — 도움말
+* `/exit`, `/quit` — 종료
+
+명령은 표준 입력으로 한 줄씩 전달한다. 빈 줄은 무시하며, 알 수 없는 명령이나 잘못된 인자는 오류를 출력한 뒤 다음 입력을 받는다. 입력 종료(EOF) 시에도 정상 종료한다. 문서 디렉터리를 실행 인자로 받는 방식은 지원하지 않으며, 인덱싱 대상 경로 지정 방식은 추후 정의한다.
+
 ## 테스트
 
 ```bash
 ctest --test-dir build --output-on-failure
 ```
 
-`BUILD_TESTING=OFF`로 테스트를 끌 수 있다.
+`BUILD_TESTING=OFF`로 테스트를 끌 수 있다. 검증 범위는 [테스트 가이드](TESTING.md)를 참고한다.
 
 ## 디렉터리 구조
 
@@ -76,6 +87,8 @@ mini-lexical-search/
 
 * 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, CTest 스모크 테스트
 * 미구현: Tokenizer, Line-aware Inverted Index, 검색, Ranking, Top-K (P0)
+
+인덱스 저장·로드는 P1에서 JSON 파일 기반으로 구현할 예정이다. 데이터 저장 위치는 절대 경로 `/data`이며, 실행 시 해당 디렉터리에 대한 읽기·쓰기 권한이 필요하다. 상세 스키마, 파일명 및 사용할 JSON 라이브러리는 추후 정의한다.
 
 ## 빌드 옵션
 

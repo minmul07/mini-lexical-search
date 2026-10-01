@@ -121,7 +121,7 @@ documents/
 사용자가 다음과 같이 검색한다.
 
 ```text
-> search 자료구조
+> /search 자료구조
 ```
 
 출력:
@@ -212,6 +212,16 @@ documents/
 ---
 
 # 7. Indexing
+
+프로젝트 루트에서 다음 명령으로 앱을 실행한다.
+
+```bash
+./build/mini_lexical_search start
+```
+
+실행 중 표준 입력으로 `/index`를 전달하여 인덱싱을 시작한다. 현재 `/index`는 미구현 안내를 출력하며, 실제 인덱싱은 P0에서 구현한다. 대상 문서 경로를 지정하는 방식은 추후 정의한다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 유지한다.
+
+인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 절대 경로 `/data`로 한다. JSON의 상세 스키마와 파일명은 추후 정의하고, 저장·로드 기능은 P1에서 구현한다.
 
 ## 7.1 Document ID
 
@@ -457,9 +467,9 @@ Line Numbers
 질의 형태:
 
 ```text
-search 자료구조
-search 자료구조 AND 알고리즘
-search 자료구조 OR 안드로이드
+/search 자료구조
+/search 자료구조 AND 알고리즘
+/search 자료구조 OR 안드로이드
 ```
 
 ## 단일 키워드
@@ -799,7 +809,7 @@ Line-aware Index 생성
 * 한국어 Tokenization 개선
 * Kiwi 연동 검토
 * Stop Word 처리
-* Index 저장 / 로드
+* JSON 파일 기반 Index 저장 / 로드
 
 ---
 
