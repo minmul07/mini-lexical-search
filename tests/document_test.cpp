@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <chrono>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -37,8 +38,8 @@ int main(int argc, char* argv[]) {
         const fs::path root = fs::absolute(argv[1]);
         fs::remove_all(root);
         fs::create_directories(root / "input" / "nested");
-        std::ofstream(root / "input" / "a.txt") << "words words\n";
-        std::ofstream(root / "input" / "nested" / "자료 구조.md") << "# title\n";
+        std::ofstream(root / "input" / "a.txt") << "abc";
+        std::ofstream(root / "input" / "nested" / "자료 구조.md");
         std::ofstream(root / "input" / "ignored.json") << "{}";
         std::ofstream(root / "input" / "ignored.TXT") << "ignored";
         fs::create_symlink(root / "input" / "a.txt", root / "input" / "alias.txt");
@@ -54,6 +55,12 @@ int main(int argc, char* argv[]) {
         for (const auto& document : documents) {
             require(document.tokenCount == 0, "tokenCount must stay zero");
         }
+        require(documents[0].hash ==
+                    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                "SHA-256 known vector failed");
+        require(documents[1].hash ==
+                    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "empty file SHA-256 failed");
         const auto repeated = mini_lexical_search::collectDocuments(root / "input");
         require(repeated[1].path == documents[1].path && repeated[1].id == documents[1].id,
                 "repeated indexing must be deterministic");
@@ -96,12 +103,110 @@ int main(int argc, char* argv[]) {
 
         // Verify all JSON escape classes, plus non-ASCII UTF-8 text.
         const std::vector<mini_lexical_search::Document> special = {
-            {0, "a\\b\"c\n\t\r\b\f", "자료 구조", 0}};
+            {0, "a\\b\"c\n\t\r\b\f", "자료 구조", 0, documents[0].hash}};
         mini_lexical_search::saveDocuments(special, root / "escaped.json");
         require(read(root / "escaped.json") ==
                     "[\n  {\"id\": 0, \"path\": \"a\\\\b\\\"c\\u000a\\u0009\\u000d\\u0008\\u000c\", "
-                    "\"title\": \"자료 구조\", \"tokenCount\": 0}\n]\n",
+                    "\"title\": \"자료 구조\", \"tokenCount\": 0, \"hash\": \"" +
+                    documents[0].hash + "\"}\n]\n",
                 "JSON string escaping failed");
+        const auto decoded = mini_lexical_search::loadDocuments(root / "escaped.json");
+        require(decoded[0].path == special[0].path && decoded[0].title == special[0].title,
+                "JSON escape round trip failed");
+
+        fs::create_directory(root / "large");
+        std::string bytes(150000, 'x');
+        bytes[65536] = '\0';
+        std::ofstream(root / "large" / "large.txt", std::ios::binary).write(bytes.data(), bytes.size());
+        mini_lexical_search::saveDocuments(mini_lexical_search::collectDocuments(root / "large"),
+                                           root / "large.json");
+
+        const auto live = root / "live";
+        const auto index = root / "index.json";
+        fs::create_directory(live);
+        std::ofstream(live / "a.txt") << "old";
+        std::ofstream(live / "b.md") << "delete";
+        std::ofstream(live / "keep.txt") << "unchanged";
+        auto stats = mini_lexical_search::indexDocuments(live, index);
+        require(stats.added == 3 && stats.updated == 0 && stats.deleted == 0 && stats.notUpdated == 0,
+                "first indexing stats failed");
+        const auto before = read(index);
+        const auto timestamp = fs::file_time_type::clock::now() - std::chrono::hours(24);
+        fs::last_write_time(index, timestamp);
+        stats = mini_lexical_search::indexDocuments(live, index);
+        require(stats.notUpdated == 3 && stats.added == 0 && stats.updated == 0 && stats.deleted == 0,
+                "unchanged indexing stats failed");
+        require(read(index) == before && fs::last_write_time(index) == timestamp,
+                "unchanged index must not be rewritten");
+
+        std::ofstream(live / "a.txt") << "new";
+        fs::remove(live / "b.md");
+        std::ofstream(live / "c.txt") << "unchanged";
+        stats = mini_lexical_search::indexDocuments(live, index);
+        require(stats.notUpdated == 1 && stats.updated == 1 && stats.added == 1 && stats.deleted == 1,
+                "mixed indexing stats failed");
+        const auto changed = mini_lexical_search::loadDocuments(index);
+        require(changed[0].id == 0 && changed[1].id == 3 && changed[2].id == 2,
+                "existing IDs must remain stable; new IDs must not collide");
+        require(changed[2].hash == changed[1].hash && changed[2].tokenCount == 0,
+                "same-content documents must remain distinct");
+
+        requireFailure([&] { mini_lexical_search::indexDocuments(root / "missing", index); },
+                       "invalid input must fail before modifying stored JSON");
+        const auto validIndex = read(index);
+        std::ofstream(index) << "invalid JSON";
+        requireFailure([&] { mini_lexical_search::indexDocuments(live, index); },
+                       "corrupted existing JSON must not be silently overwritten");
+        require(read(index) == "invalid JSON", "corrupted index was overwritten");
+        std::ofstream(index) << validIndex;
+        fs::remove_all(live);
+        fs::create_directory(live);
+        stats = mini_lexical_search::indexDocuments(live, index);
+        require(stats.deleted == 3 && stats.added == 0 && stats.updated == 0 && stats.notUpdated == 0,
+                "empty input must delete all previous records");
+        fs::last_write_time(index, timestamp);
+        stats = mini_lexical_search::indexDocuments(live, index);
+        require(stats.notUpdated == 0 && stats.updated == 0 && stats.added == 0 && stats.deleted == 0 &&
+                    fs::last_write_time(index) == timestamp,
+                "empty unchanged index must not be rewritten");
+
+        auto legacy = documents;
+        for (auto& document : legacy) document.hash.clear();
+        mini_lexical_search::saveDocuments(legacy, index);
+        auto legacyJson = read(index);
+        const std::string hashField = ", \"hash\": \"\"";
+        std::size_t found = 0;
+        while ((found = legacyJson.find(hashField)) != std::string::npos) {
+            legacyJson.erase(found, hashField.size());
+        }
+        std::ofstream(index) << legacyJson;
+        stats = mini_lexical_search::indexDocuments(root / "input", index);
+        require(stats.updated == 2 && stats.notUpdated == 0 && stats.added == 0 && stats.deleted == 0,
+                "legacy records must be updated with hashes");
+
+        const auto parserFixture = root / "parser.json";
+        auto duplicates = documents;
+        duplicates.push_back(documents[0]);
+        mini_lexical_search::saveDocuments(duplicates, parserFixture);
+        requireFailure([&] { mini_lexical_search::loadDocuments(parserFixture); },
+                       "duplicate paths and IDs must be rejected");
+        auto badHash = documents;
+        badHash[0].hash = "invalid";
+        mini_lexical_search::saveDocuments(badHash, parserFixture);
+        requireFailure([&] { mini_lexical_search::loadDocuments(parserFixture); },
+                       "invalid hash must be rejected");
+        std::ofstream(parserFixture) <<
+            "[{\"id\":0,\"path\":\"\\u0061\\ud83d\\ude00\",\"title\":\"\\uD55C\",\"tokenCount\":0}]";
+        const auto unicode = mini_lexical_search::loadDocuments(parserFixture);
+        require(unicode[0].path == "a😀" && unicode[0].title == "한", "unicode JSON decode failed");
+        for (const auto* invalid : {
+                 "[] trailing", "[{}]", "[", "[0]", "[{\"id\":00}]",
+                 "[{\"id\":4294967296}]", "[{\"id\":-1}]",
+                 "[{\"path\":\"\\ud800\"}]", "[{\"id\":0,\"id\":1}]"}) {
+            std::ofstream(parserFixture) << invalid;
+            requireFailure([&] { mini_lexical_search::loadDocuments(parserFixture); },
+                           "malformed JSON accepted");
+        }
         std::cout << "document_test passed\n";
         return 0;
     } catch (const std::exception& error) {

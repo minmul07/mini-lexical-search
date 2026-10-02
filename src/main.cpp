@@ -46,10 +46,10 @@ void runRepl(const char* program) {
         if (command == "/index") {
             try {
                 const auto directory = arguments.empty() ? "./documents" : arguments;
-                const auto documents = mini_lexical_search::collectDocuments(directory);
-                mini_lexical_search::saveDocuments(documents, ".data/documents.json");
-                std::cout << "Saved " << documents.size()
-                          << " documents to .data/documents.json\n";
+                const auto stats = mini_lexical_search::indexDocuments(directory, ".data/documents.json");
+                std::cout << stats.notUpdated << " not updated, " << stats.updated
+                          << " updated, " << stats.added << " added, "
+                          << stats.deleted << " deleted\n";
             } catch (const std::exception& error) {
                 std::cout << "error: indexing failed: " << error.what() << "\n";
             }

@@ -43,11 +43,11 @@ ctest --test-dir build --output-on-failure
 
 자세한 내용은 [개발 환경](docs/DEVELOPMENT.md)을 참고한다.
 
-앱 실행 후 표준 입력으로 `/index [디렉터리]`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. `/index`는 기본 `./documents` 또는 지정한 디렉터리의 `.txt`·`.md` 문서 메타데이터를 `.data/documents.json`에 저장한다. `tokenCount`는 `0`으로 유지하며, 토큰화·검색은 아직 미구현이다.
+앱 실행 후 표준 입력으로 `/index [디렉터리]`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. `/index`는 기본 `./documents` 또는 지정한 디렉터리의 `.txt`·`.md` 문서 메타데이터를 `.data/documents.json`에 저장한다. 각 문서에는 원문 바이트의 SHA-256 `hash`를 저장하고, 이전 목록과 비교해 `n not updated, n updated, n added, n deleted`를 출력한다. 변경이 없으면 JSON을 다시 쓰지 않는다. `tokenCount`는 `0`으로 유지하며, 토큰화·검색은 아직 미구현이다.
 
 `-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 사용할 수 있다.
 
-저장 위치는 현재 작업 디렉터리 기준이다. 저장 시 `.data/`가 없으면 생성을 시도하므로 해당 경로에 대한 쓰기 권한이 필요하다. 역색인 저장 및 JSON 로드는 추후 구현한다.
+저장 위치는 현재 작업 디렉터리 기준이다. 저장 시 `.data/`가 없으면 생성을 시도하므로 해당 경로에 대한 쓰기 권한이 필요하다. 역색인 저장·로드는 추후 구현한다.
 
 ## 문서
 
@@ -63,4 +63,4 @@ ctest --test-dir build --output-on-failure
 
 ## 기술 스택
 
-C++17 이상, CMake, STL
+C++17 이상, CMake, STL, OpenSSL Crypto (SHA-256)

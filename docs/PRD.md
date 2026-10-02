@@ -219,13 +219,13 @@ documents/
 ./build/mini_lexical_search start
 ```
 
-실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 JSON으로 저장하며, 토큰화와 역색인 생성은 추후 구현한다. 심볼릭 링크는 제외하고 절대 경로순으로 ID를 0부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 유지한다.
+실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 JSON으로 저장하며, 토큰화와 역색인 생성은 추후 구현한다. 심볼릭 링크는 제외하고 첫 저장 시 절대 경로순으로 ID를 0부터 부여하며, 이후에는 기존 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 유지한다.
 
-인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 현재 Document 테이블은 `.data/documents.json`에 아래 JSON 배열로 저장하며, 재실행 시 전체 교체한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 역색인 저장 및 JSON 로드는 추후 구현한다.
+인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 현재 Document 테이블은 `.data/documents.json`에 아래 JSON 배열로 저장하며, `/index`마다 이전 JSON을 로드해 절대 경로와 원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 JSON 파일을 다시 쓰지 않고, 변화가 있으면 배열 전체를 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 역색인 저장·로드는 추후 구현한다.
 
 ```json
 [
-  {"id": 0, "path": "/absolute/path/documents/example.md", "title": "example.md", "tokenCount": 0}
+  {"id": 0, "path": "/absolute/path/documents/example.md", "title": "example.md", "tokenCount": 0, "hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
 ]
 ```
 
@@ -253,6 +253,7 @@ struct Document {
     std::string path;
     std::string title;
     uint32_t tokenCount;
+    std::string hash; // 원문 바이트의 SHA-256 (소문자 16진수 64자리)
 };
 ```
 
