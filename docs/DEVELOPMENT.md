@@ -41,6 +41,8 @@ $ ./build/mini_lexical_search start
 Mini Lexical Search started.
 Type '/help' for commands, '/exit' to quit.
 > /index documents/recap
+updating file metadata..
+updated file metadata (2 ms)
 0 not updated, 0 updated, 3 added, 0 deleted
 > /search 자료구조
 (not implemented yet) Search arrives in P0.
@@ -59,7 +61,7 @@ Type '/help' for commands, '/exit' to quit.
 * `/help` — 도움말
 * `/exit`, `/quit` — 종료
 
-명령은 표준 입력으로 한 줄씩 전달한다. 빈 줄은 무시하며, 알 수 없는 명령이나 잘못된 인자는 오류를 출력한 뒤 다음 입력을 받는다. 입력 종료(EOF) 시에도 정상 종료한다. 문서 디렉터리는 실행 인자 대신 `/index`의 인자로 지정한다. 명령 뒤 나머지 문자열 전체를 경로로 해석하므로 공백이 포함된 경로도 따옴표 없이 입력한다. 경로 양 끝의 공백은 제거한다. 수집·저장 실패 시 오류를 출력하고 앱은 계속 실행된다.
+명령은 표준 입력으로 한 줄씩 전달한다. 빈 줄은 무시하며, 알 수 없는 명령이나 잘못된 인자는 오류를 출력한 뒤 다음 입력을 받는다. 입력 종료(EOF) 시에도 정상 종료한다. 문서 디렉터리는 실행 인자 대신 `/index`의 인자로 지정한다. 명령 뒤 나머지 문자열 전체를 경로로 해석하므로 공백이 포함된 경로도 따옴표 없이 입력한다. 경로 양 끝의 공백은 제거한다. `/index`는 시작 시 `updating file metadata..`, 성공 시 `updated file metadata (<시간> ms)`와 변경 집계를 출력한다. 시간은 문서 수집·해시 계산·기존 JSON 로드·비교·필요한 저장을 포함한 경과 시간이며 정수 밀리초로 표시한다. 실패 시 완료 메시지 대신 오류를 출력하고 앱은 계속 실행된다.
 
 ## 테스트
 

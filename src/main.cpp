@@ -1,3 +1,4 @@
+#include <chrono>
 #include <exception>
 #include <iostream>
 #include <sstream>
@@ -46,7 +47,12 @@ void runRepl(const char* program) {
         if (command == "/index") {
             try {
                 const auto directory = arguments.empty() ? "./documents" : arguments;
+                std::cout << "updating file metadata..\n" << std::flush;
+                const auto started = std::chrono::steady_clock::now();
                 const auto stats = mini_lexical_search::indexDocuments(directory, ".data/documents.json");
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - started).count();
+                std::cout << "updated file metadata (" << elapsed << " ms)\n";
                 std::cout << stats.notUpdated << " not updated, " << stats.updated
                           << " updated, " << stats.added << " added, "
                           << stats.deleted << " deleted\n";
