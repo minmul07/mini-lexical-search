@@ -16,6 +16,7 @@ endif()
 add_compile_options(-Wall -Wextra -Wpedantic)
 
 add_library(mini_lexical_search_core
+    src/document.cpp
     src/version.cpp)
 target_include_directories(mini_lexical_search_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

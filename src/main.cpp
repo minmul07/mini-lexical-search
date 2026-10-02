@@ -1,7 +1,9 @@
+#include <exception>
 #include <iostream>
 #include <sstream>
 #include <string>
 
+#include "mini_lexical_search/document.hpp"
 #include "mini_lexical_search/version.hpp"
 
 namespace {
@@ -16,13 +18,13 @@ void printUsage(const char* program) {
         << "  -h, --help     도움말 출력\n"
         << "  -v, --version  버전 정보 출력\n\n"
         << "대화형 명령:\n"
-        << "  /index             인덱싱 시작 (미구현)\n"
+        << "  /index [디렉터리]  문서 목록 JSON 저장 (기본: ./documents)\n"
         << "  /search <검색어>    색인된 문서 검색 (미구현)\n"
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }
 
-// Minimal REPL skeleton. Indexing and search are not implemented yet (P0).
+// Document metadata indexing is available; tokenization and search remain P0 work.
 void runRepl(const char* program) {
     std::cout << "Mini Lexical Search started.\n"
               << "Type '/help' for commands, '/exit' to quit.\n";
@@ -36,6 +38,23 @@ void runRepl(const char* program) {
         }
         std::string arguments;
         std::getline(input >> std::ws, arguments);
+        const auto last = arguments.find_last_not_of(" \t\r");
+        if (last != std::string::npos) {
+            arguments.erase(last + 1);
+        }
+
+        if (command == "/index") {
+            try {
+                const auto directory = arguments.empty() ? "./documents" : arguments;
+                const auto documents = mini_lexical_search::collectDocuments(directory);
+                mini_lexical_search::saveDocuments(documents, ".data/documents.json");
+                std::cout << "Saved " << documents.size()
+                          << " documents to .data/documents.json\n";
+            } catch (const std::exception& error) {
+                std::cout << "error: indexing failed: " << error.what() << "\n";
+            }
+            continue;
+        }
 
         if (command == "/search") {
             if (arguments.empty()) {
@@ -45,7 +64,7 @@ void runRepl(const char* program) {
             }
             continue;
         }
-        if (command == "/index" || command == "/help" ||
+        if (command == "/help" ||
             command == "/exit" || command == "/quit") {
             if (!arguments.empty()) {
                 std::cout << "error: unexpected arguments for " << command << "\n";
@@ -54,11 +73,7 @@ void runRepl(const char* program) {
             if (command == "/exit" || command == "/quit") {
                 break;
             }
-            if (command == "/help") {
-                printUsage(program);
-            } else {
-                std::cout << "(not implemented yet) Indexing arrives in P0.\n";
-            }
+            printUsage(program);
             continue;
         }
         std::cout << "Unknown command: " << line << "\n";

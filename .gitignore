@@ -18,5 +18,8 @@ Testing/
 .agents/
 .cursor/
 
-# DATA
-data/
+# Documents
+documents/
+
+# Generated data
+.data/

@@ -1,8 +1,13 @@
+set(fixture "${CMAKE_CURRENT_BINARY_DIR}/cli_fixture")
+file(REMOVE_RECURSE "${fixture}")
+file(MAKE_DIRECTORY "${fixture}")
+
 function(check_cli name input expected_exit expected_output)
     set(input_file "${CMAKE_CURRENT_BINARY_DIR}/cli_${name}_input.txt")
     file(WRITE "${input_file}" "${input}")
     execute_process(
         COMMAND "${APP}" ${ARGN}
+        WORKING_DIRECTORY "${fixture}"
         INPUT_FILE "${input_file}"
         OUTPUT_VARIABLE output
         ERROR_VARIABLE error
@@ -36,10 +41,10 @@ check_cli(extra_argument "" 1 "unexpected argument" start docs)
 check_cli(eof "" 0 "Mini Lexical Search started." start)
 
 check_cli(commands "\n  \t\n /index \n/search 자료구조 알고리즘\n/help\n/search\n/index extra\n/exit extra\n/indexing\n/searching query\nsearch query\n/unknown\n/index\n/exit\n/unknown_after_exit\n"
-    0 "Indexing arrives in P0." start)
+    0 "error: indexing failed:" start)
 foreach(expected
         "Search arrives in P0." "사용법:" "Usage: /search <query>"
-        "unexpected arguments for /index" "unexpected arguments for /exit"
+        "not a directory: extra" "unexpected arguments for /exit"
         "Unknown command: /indexing" "Unknown command: /searching query"
         "Unknown command: search query" "Unknown command: /unknown")
     string(FIND "${last_output}" "${expected}" found)
@@ -57,3 +62,29 @@ string(FIND "${last_output}" "unknown_after_quit" found)
 if(NOT found EQUAL -1)
     message(FATAL_ERROR "quit: /quit did not stop input processing")
 endif()
+
+file(MAKE_DIRECTORY "${fixture}/documents/recap")
+file(WRITE "${fixture}/documents/recap/example.md" "# recap\n")
+check_cli(index_relative "/index documents/recap\n/exit\n" 0
+    "Saved 1 documents to .data/documents.json" start)
+file(READ "${fixture}/.data/documents.json" json)
+string(JSON count LENGTH "${json}")
+string(JSON path GET "${json}" 0 path)
+string(JSON token_count GET "${json}" 0 tokenCount)
+if(NOT count EQUAL 1 OR NOT path STREQUAL "${fixture}/documents/recap/example.md"
+        OR NOT token_count EQUAL 0)
+    message(FATAL_ERROR "relative input did not save the expected Document: ${json}")
+endif()
+
+file(MAKE_DIRECTORY "${fixture}/documents")
+file(WRITE "${fixture}/documents/default.txt" "default input\n")
+check_cli(index_default "/index\n/exit\n" 0
+    "Saved 2 documents to .data/documents.json" start)
+file(READ "${fixture}/.data/documents.json" json)
+string(JSON count LENGTH "${json}")
+string(JSON title GET "${json}" 0 title)
+string(JSON token_count GET "${json}" 0 tokenCount)
+if(NOT count EQUAL 2 OR NOT title STREQUAL "default.txt" OR NOT token_count EQUAL 0)
+    message(FATAL_ERROR "default input did not replace the saved Document: ${json}")
+endif()
+file(REMOVE_RECURSE "${fixture}")
