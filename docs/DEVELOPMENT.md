@@ -4,7 +4,7 @@
 
 | 항목 | 버전 | 비고 |
 | --- | --- | --- |
-| C++ | C++17 이상 | `g++ 13.3.0`에서 확인 |
+| C++ | ISO C++20 (`-std=c++20`) | `g++ 13.3.0`에서 확인 |
 | CMake | 3.20 이상 | 빌드/테스트 |
 | OpenSSL | — | SHA-256 계산용 libcrypto 헤더·라이브러리 (`libssl-dev`) |
 | Compiler | GCC / Clang | `-Wall -Wextra -Wpedantic` 적용 |

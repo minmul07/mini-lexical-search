@@ -63,4 +63,4 @@ ctest --test-dir build --output-on-failure
 
 ## 기술 스택
 
-C++17 이상, CMake, STL, OpenSSL Crypto (SHA-256)
+ISO C++20 (`-std=c++20`), CMake, STL, OpenSSL Crypto (SHA-256)
