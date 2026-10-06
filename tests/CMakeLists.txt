@@ -7,6 +7,12 @@ add_test(
     NAME version_test
     COMMAND version_test)
 
+add_executable(tokenizer_test tokenizer_test.cpp)
+target_link_libraries(tokenizer_test PRIVATE mini_lexical_search_core)
+add_test(
+    NAME tokenizer_test
+    COMMAND tokenizer_test)
+
 add_test(
     NAME cli_test
     COMMAND ${CMAKE_COMMAND}

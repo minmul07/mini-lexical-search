@@ -20,6 +20,7 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 add_library(mini_lexical_search_core
     src/document.cpp
     src/document_json.cpp
+    src/tokenizer.cpp
     src/version.cpp)
 target_include_directories(mini_lexical_search_core
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

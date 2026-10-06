@@ -1,5 +1,6 @@
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -19,13 +20,14 @@ void printUsage(const char* program) {
         << "  -h, --help     도움말 출력\n"
         << "  -v, --version  버전 정보 출력\n\n"
         << "대화형 명령:\n"
-        << "  /index [디렉터리]  문서 목록 JSON 저장 (기본: ./documents)\n"
+        << "  /index [디렉터리]  문서 메타데이터 저장 및 토큰화 (기본: ./documents)\n"
         << "  /search <검색어>    색인된 문서 검색 (미구현)\n"
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }
 
-// Document metadata indexing is available; tokenization and search remain P0 work.
+// Document metadata indexing and tokenization are available; the inverted
+// index and search remain P0 work.
 void runRepl(const char* program) {
     std::cout << "Mini Lexical Search started.\n"
               << "Type '/help' for commands, '/exit' to quit.\n";
@@ -47,15 +49,31 @@ void runRepl(const char* program) {
         if (command == "/index") {
             try {
                 const auto directory = arguments.empty() ? "./documents" : arguments;
+                const std::filesystem::path output = ".data/documents.json";
+                mini_lexical_search::SimpleTokenizer tokenizer;
+
                 std::cout << "updating file metadata..\n" << std::flush;
-                const auto started = std::chrono::steady_clock::now();
-                const auto stats = mini_lexical_search::indexDocuments(directory, ".data/documents.json");
-                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::steady_clock::now() - started).count();
-                std::cout << "updated file metadata (" << elapsed << " ms)\n";
-                std::cout << stats.notUpdated << " not updated, " << stats.updated
-                          << " updated, " << stats.added << " added, "
-                          << stats.deleted << " deleted\n";
+                const auto metadataStarted = std::chrono::steady_clock::now();
+                auto work = mini_lexical_search::prepareIndex(directory, output);
+                const auto metadataElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - metadataStarted).count();
+                std::cout << "updated file metadata (" << metadataElapsed << " ms)\n";
+                std::cout << work.stats.notUpdated << " not updated, " << work.stats.updated
+                          << " updated, " << work.stats.added << " added, "
+                          << work.stats.deleted << " deleted\n";
+
+                std::cout << "tokenizing documents..\n" << std::flush;
+                const auto tokenizeStarted = std::chrono::steady_clock::now();
+                const auto tokenStats = mini_lexical_search::tokenizeDocuments(
+                    work.documents, work.toTokenize, tokenizer, {});
+                const auto tokenizeElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::steady_clock::now() - tokenizeStarted).count();
+                std::cout << "tokenized " << tokenStats.documents << " documents ("
+                          << tokenizeElapsed << " ms)\n";
+
+                if (work.changed) {
+                    mini_lexical_search::saveDocuments(work.documents, output);
+                }
             } catch (const std::exception& error) {
                 std::cout << "error: indexing failed: " << error.what() << "\n";
             }

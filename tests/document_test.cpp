@@ -1,9 +1,13 @@
 #include <filesystem>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <iterator>
 #include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "mini_lexical_search/document.hpp"
 
@@ -148,7 +152,7 @@ int main(int argc, char* argv[]) {
         const auto changed = mini_lexical_search::loadDocuments(index);
         require(changed[0].id == 0 && changed[1].id == 3 && changed[2].id == 2,
                 "existing IDs must remain stable; new IDs must not collide");
-        require(changed[2].hash == changed[1].hash && changed[2].tokenCount == 0,
+        require(changed[2].hash == changed[1].hash && changed[2].tokenCount == 1,
                 "same-content documents must remain distinct");
 
         requireFailure([&] { mini_lexical_search::indexDocuments(root / "missing", index); },
@@ -169,6 +173,71 @@ int main(int argc, char* argv[]) {
         require(stats.notUpdated == 0 && stats.updated == 0 && stats.added == 0 && stats.deleted == 0 &&
                     fs::last_write_time(index) == timestamp,
                 "empty unchanged index must not be rewritten");
+
+        // Tokenization reads only queued files, records original line numbers,
+        // and fills tokenCount. Unchanged files must stay gated out.
+        mini_lexical_search::SimpleTokenizer tokenizer;
+        const auto tokenRoot = root / "tokenize";
+        const auto tokenIndex = root / "tokenize.json";
+        fs::create_directory(tokenRoot);
+        std::ofstream(tokenRoot / "sample.txt")
+            << "First line\n"
+               "\n"
+               "  자료구조 자료구조  \n"
+               "C++에서 자료구조를 배운다\n";
+        auto work = mini_lexical_search::prepareIndex(tokenRoot, tokenIndex);
+        require(work.changed && work.toTokenize.size() == 1 && work.stats.added == 1,
+                "new document must be queued for tokenization");
+        std::vector<std::pair<std::uint32_t, std::string>> emitted;
+        const mini_lexical_search::TokenSink sink =
+            [&emitted](mini_lexical_search::DocumentId id, std::uint32_t line,
+                       const std::string& token) {
+                require(id == 0, "token sink received the wrong document");
+                emitted.emplace_back(line, token);
+            };
+        const auto tokenStats =
+            mini_lexical_search::tokenizeDocuments(work.documents, work.toTokenize, tokenizer, sink);
+        require(tokenStats.documents == 1 && tokenStats.tokens == 7,
+                "tokenization must count tokens across lines");
+        require(work.documents[0].tokenCount == 7, "tokenCount must be stored on the document");
+        const std::vector<std::pair<std::uint32_t, std::string>> expectedTokens = {
+            {1, "first"}, {1, "line"}, {3, "자료구조"}, {3, "자료구조"},
+            {4, "c에서"}, {4, "자료구조를"}, {4, "배운다"}};
+        require(emitted == expectedTokens, "tokens must carry their original 1-based line numbers");
+
+        mini_lexical_search::saveDocuments(work.documents, tokenIndex);
+        const auto tokenBefore = read(tokenIndex);
+        const auto tokenStamp = fs::file_time_type::clock::now() - std::chrono::hours(24);
+        fs::last_write_time(tokenIndex, tokenStamp);
+        auto again = mini_lexical_search::prepareIndex(tokenRoot, tokenIndex);
+        require(!again.changed && again.toTokenize.empty(), "unchanged document must be gated out");
+        const auto againStats =
+            mini_lexical_search::tokenizeDocuments(again.documents, again.toTokenize, tokenizer, {});
+        require(againStats.documents == 0 && againStats.tokens == 0,
+                "gated tokenization must not read files");
+        require(read(tokenIndex) == tokenBefore && fs::last_write_time(tokenIndex) == tokenStamp,
+                "gated tokenization must not rewrite the table");
+
+        std::ofstream(tokenRoot / "sample.txt") << "changed";
+        auto modified = mini_lexical_search::prepareIndex(tokenRoot, tokenIndex);
+        require(modified.changed && modified.stats.updated == 1 && modified.toTokenize.size() == 1,
+                "edited document must be queued again");
+
+        // Tokenless files produce no tokens but are still recorded with tokenCount 0.
+        const auto emptyRoot = root / "empty_tokens";
+        const auto emptyIndex = root / "empty_tokens.json";
+        fs::create_directory(emptyRoot);
+        std::ofstream(emptyRoot / "blank.txt") << "   \n!!!\n";
+        auto emptyWork = mini_lexical_search::prepareIndex(emptyRoot, emptyIndex);
+        const auto emptyStats =
+            mini_lexical_search::tokenizeDocuments(emptyWork.documents, emptyWork.toTokenize, tokenizer, {});
+        require(emptyStats.documents == 1 && emptyStats.tokens == 0 &&
+                    emptyWork.documents[0].tokenCount == 0,
+                "tokenless files must produce zero tokens");
+        mini_lexical_search::saveDocuments(emptyWork.documents, emptyIndex);
+        auto emptyAgain = mini_lexical_search::prepareIndex(emptyRoot, emptyIndex);
+        require(!emptyAgain.changed && emptyAgain.toTokenize.empty(),
+                "tokenless unchanged document must stay gated by hash, not tokenCount");
 
         auto legacy = documents;
         for (auto& document : legacy) document.hash.clear();
