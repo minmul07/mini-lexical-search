@@ -758,8 +758,8 @@ Indexing 과정에서 발견된 Vocabulary를 Trie에 저장한다.
 
 P0에서 사용한다.
 
-* 공백 분리
-* 특수문자 제거
+* ASCII 영문·숫자와 한글(완성형·자모)만 토큰으로 유지
+* 그 밖의 문자(공백·특수문자·이모지·BOM·기타 언어)는 토큰을 분리하고 제외
 * 영문 lowercase 변환
 
 ### KoreanTokenizer

@@ -197,12 +197,12 @@ int main(int argc, char* argv[]) {
             };
         const auto tokenStats =
             mini_lexical_search::tokenizeDocuments(work.documents, work.toTokenize, tokenizer, sink);
-        require(tokenStats.documents == 1 && tokenStats.tokens == 7,
+        require(tokenStats.documents == 1 && tokenStats.tokens == 8,
                 "tokenization must count tokens across lines");
-        require(work.documents[0].tokenCount == 7, "tokenCount must be stored on the document");
+        require(work.documents[0].tokenCount == 8, "tokenCount must be stored on the document");
         const std::vector<std::pair<std::uint32_t, std::string>> expectedTokens = {
             {1, "first"}, {1, "line"}, {3, "자료구조"}, {3, "자료구조"},
-            {4, "c에서"}, {4, "자료구조를"}, {4, "배운다"}};
+            {4, "c"}, {4, "에서"}, {4, "자료구조를"}, {4, "배운다"}};
         require(emitted == expectedTokens, "tokens must carry their original 1-based line numbers");
 
         mini_lexical_search::saveDocuments(work.documents, tokenIndex);

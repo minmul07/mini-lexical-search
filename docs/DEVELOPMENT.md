@@ -95,7 +95,7 @@ mini-lexical-search/
 
 `src/document.cpp`는 재귀 문서 수집, Document 배열의 JSON 저장, 그리고 변경 문서 토큰화를 담당한다. 하위 디렉터리를 포함해 소문자 `.txt`·`.md` 일반 파일만 수집하며 심볼릭 링크는 제외한다. 첫 저장 시 절대 경로순으로 정렬하고 ID를 0부터 부여한다. 이후에는 기존 문서 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `title`은 확장자를 포함한 파일명이다. 문서 원문을 바이너리 스트림으로 읽어 SHA-256 `hash`를 계산한다. `prepareIndex`가 이전 문서 테이블과 비교해 `notUpdated`/`updated`/`added`/`deleted`를 분류하고, 추가·변경된 문서의 인덱스만 `toTokenize`에, 변경·삭제된 문서 ID를 `removed`에 담는다. `tokenizeDocuments`는 `toTokenize`의 문서만 열어 `std::getline`으로 줄 단위(1부터 시작)로 읽고 `Tokenizer::tokenize` 결과를 줄 번호와 함께 방출하며, 문서별 토큰 수를 `tokenCount`에 기록한다. 같은 해시·제목인 문서는 재토큰화하지 않고 기존 `tokenCount`를 유지하며, 변경이 감지된 문서는 이전 토큰 결과를 버리고 처음부터 다시 만든다.
 
-`src/tokenizer.cpp`는 `SimpleTokenizer`를 구현한다. ASCII 공백으로 분리하고 ASCII 영문은 소문자로 바꾸며 ASCII 문장부호·제어문자는 제거한다. `0x80` 이상 바이트는 UTF-8 한국어 등을 위해 그대로 유지한다.
+`src/tokenizer.cpp`는 `SimpleTokenizer`를 구현한다. UTF-8을 코드 포인트 단위로 해석하여 ASCII 영문·숫자와 한글(완성형 음절·자모·호환 자모·확장 자모)만 토큰 문자로 유지하고, ASCII 영문은 소문자로 바꾼다. 그 밖의 모든 코드 포인트(공백·문장부호·이모지·BOM·기타 언어)는 토큰 구분자로 삼아 앞뒤 토큰을 분리하고 결과에서 제외한다. 연속된 구분자는 빈 토큰을 만들지 않으며, 허용 문자끼리는 언어가 달라도 합쳐서 하나의 토큰으로 둔다. 오버롱 인코딩·서로게이트·`U+10FFFF` 초과·잘린 시퀀스 등 잘못된 UTF-8 바이트도 구분자로 처리한다.
 
 `src/inverted_index.cpp`는 `InvertedIndex`를 구현한다. `std::unordered_map<std::string, PostingList>`를 소유하며, `add`로 Posting List를 `documentId` 오름차순으로 유지하고 `lines`는 중복 없이 오름차순으로 넣는다. `removeDocument`는 문서의 Posting을 모두 제거하고 빈 term을 지우며, `merge`는 새 Posting을 기존 목록과 정렬을 유지한 채 합친다. 두 목록에 같은 문서가 있으면 변경 없이 오류를 낸다.
 
