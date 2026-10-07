@@ -20,6 +20,10 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 add_library(mini_lexical_search_core
     src/document.cpp
     src/document_json.cpp
+    src/index_json.cpp
+    src/indexer.cpp
+    src/inverted_index.cpp
+    src/json.cpp
     src/tokenizer.cpp
     src/version.cpp)
 target_include_directories(mini_lexical_search_core

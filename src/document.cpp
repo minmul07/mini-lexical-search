@@ -10,6 +10,8 @@
 
 #include <openssl/evp.h>
 
+#include "json_internal.hpp"
+
 namespace mini_lexical_search {
 namespace {
 
@@ -46,21 +48,6 @@ std::string hashFile(const std::filesystem::path& path) {
     return hash;
 }
 
-void writeJsonString(std::ostream& output, const std::string& value) {
-    constexpr char hex[] = "0123456789abcdef";
-    output << '"';
-    for (unsigned char character : value) {
-        if (character == '"' || character == '\\') {
-            output << '\\' << static_cast<char>(character);
-        } else if (character < 0x20) {
-            output << "\\u00" << hex[character >> 4] << hex[character & 0xf];
-        } else {
-            output << static_cast<char>(character);
-        }
-    }
-    output << '"';
-}
-
 }  // namespace
 
 std::vector<Document> collectDocuments(const std::filesystem::path& directory) {
@@ -93,51 +80,21 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory) {
 
 void saveDocuments(const std::vector<Document>& documents,
                    const std::filesystem::path& output) {
-    if (!output.parent_path().empty()) {
-        std::filesystem::create_directories(output.parent_path());
-    }
-    auto temporary = output;
-    temporary += ".tmp";
-    // Reserve the staging directory so concurrent writers cannot share a file.
-    if (!std::filesystem::create_directory(temporary)) {
-        throw std::runtime_error("temporary directory already exists: " + temporary.string());
-    }
-    const auto stagedFile = temporary / "documents.json";
-    try {
-        std::ofstream stream;
-        stream.exceptions(std::ios::failbit | std::ios::badbit);
-        stream.open(stagedFile, std::ios::binary | std::ios::trunc);
+    json::writeFileAtomically(output, [&documents](std::ostream& stream) {
         stream << "[\n";
         for (std::size_t i = 0; i < documents.size(); ++i) {
-            const auto& document = documents[i];
-            stream << "  {\"id\": " << document.id << ", \"path\": ";
-            writeJsonString(stream, document.path);
-            stream << ", \"title\": ";
-            writeJsonString(stream, document.title);
-            stream << ", \"tokenCount\": " << document.tokenCount << ", \"hash\": ";
-            writeJsonString(stream, document.hash);
-            stream << "}";
+            stream << "  ";
+            json::writeDocument(stream, documents[i]);
             stream << (i + 1 < documents.size() ? ",\n" : "\n");
         }
         stream << "]\n";
-        stream.close();
-        std::filesystem::rename(stagedFile, output);
-    } catch (...) {
-        std::error_code ignored;
-        std::filesystem::remove(stagedFile, ignored);
-        std::filesystem::remove(temporary, ignored);
-        throw;
-    }
-    std::error_code ignored;
-    std::filesystem::remove(temporary, ignored);
+    });
 }
 
 IndexWork prepareIndex(const std::filesystem::path& directory,
-                       const std::filesystem::path& output) {
+                       const std::vector<Document>& previous) {
     IndexWork work;
     work.documents = collectDocuments(directory);
-    const bool exists = std::filesystem::exists(output);
-    const auto previous = exists ? loadDocuments(output) : std::vector<Document>{};
     std::unordered_map<std::string, const Document*> byPath;
     std::uint64_t nextId = 0;
     for (const auto& document : previous) {
@@ -164,13 +121,26 @@ IndexWork prepareIndex(const std::filesystem::path& directory,
                 ++work.stats.notUpdated;
             } else {
                 work.toTokenize.push_back(index);
+                work.removed.push_back(document.id);
                 ++work.stats.updated;
             }
             byPath.erase(old);
         }
     }
+    for (const auto& entry : byPath) {
+        work.removed.push_back(entry.second->id);
+    }
+    std::sort(work.removed.begin(), work.removed.end());
     work.stats.deleted = byPath.size();
-    work.changed = !exists || work.stats.added || work.stats.updated || work.stats.deleted;
+    work.changed = work.stats.added || work.stats.updated || work.stats.deleted;
+    return work;
+}
+
+IndexWork prepareIndex(const std::filesystem::path& directory,
+                       const std::filesystem::path& output) {
+    const bool exists = std::filesystem::exists(output);
+    auto work = prepareIndex(directory, exists ? loadDocuments(output) : std::vector<Document>{});
+    work.changed = !exists || work.changed;
     return work;
 }
 

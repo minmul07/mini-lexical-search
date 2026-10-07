@@ -13,6 +13,18 @@ add_test(
     NAME tokenizer_test
     COMMAND tokenizer_test)
 
+add_executable(inverted_index_test inverted_index_test.cpp)
+target_link_libraries(inverted_index_test PRIVATE mini_lexical_search_core)
+add_test(
+    NAME inverted_index_test
+    COMMAND inverted_index_test)
+
+add_executable(indexer_test indexer_test.cpp)
+target_link_libraries(indexer_test PRIVATE mini_lexical_search_core)
+add_test(
+    NAME indexer_test
+    COMMAND indexer_test ${CMAKE_CURRENT_BINARY_DIR}/indexer_fixture)
+
 add_test(
     NAME cli_test
     COMMAND ${CMAKE_COMMAND}

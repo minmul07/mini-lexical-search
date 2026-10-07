@@ -34,6 +34,9 @@ struct IndexWork {
     // Indices into `documents` of added or updated documents that still need
     // tokenization. Empty when every document is unchanged.
     std::vector<std::size_t> toTokenize;
+    // IDs whose previous postings must be discarded: updated and deleted
+    // documents, ascending. Empty when no inverted index entry is stale.
+    std::vector<DocumentId> removed;
     IndexStats stats;
     bool changed = false;  // Whether the stored table must be rewritten.
 };
@@ -53,8 +56,13 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory);
 // Reads the document table, including legacy entries without a hash.
 std::vector<Document> loadDocuments(const std::filesystem::path& input);
 
-// Compares the selected directory with the stored table and classifies each
-// document without writing to disk or tokenizing.
+// Compares the selected directory with a previously stored document table and
+// classifies each document without writing to disk or tokenizing.
+IndexWork prepareIndex(const std::filesystem::path& directory,
+                       const std::vector<Document>& previous);
+
+// Same comparison after loading the previous table from a JSON file. A missing
+// file is treated as an empty table and always marks the work as changed.
 IndexWork prepareIndex(const std::filesystem::path& directory,
                        const std::filesystem::path& output);
 
