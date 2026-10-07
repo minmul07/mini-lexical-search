@@ -56,6 +56,29 @@ void InvertedIndex::removeDocument(DocumentId documentId) {
 }
 
 void InvertedIndex::merge(const InvertedIndex& other) {
+    // Check every term before making changes: a later conflict must not leave
+    // earlier terms partially merged.
+    for (const auto& [term, source] : other.postings_) {
+        const auto found = postings_.find(term);
+        if (found == postings_.end()) {
+            continue;
+        }
+        const auto& target = found->second;
+        std::size_t left = 0;
+        std::size_t right = 0;
+        while (left < target.size() && right < source.size()) {
+            if (target[left].documentId < source[right].documentId) {
+                ++left;
+            } else if (target[left].documentId > source[right].documentId) {
+                ++right;
+            } else {
+                throw std::runtime_error("duplicate posting for document " +
+                                         std::to_string(target[left].documentId) +
+                                         " in term '" + term + "'");
+            }
+        }
+    }
+
     for (const auto& entry : other.postings_) {
         const auto& term = entry.first;
         const auto& source = entry.second;
@@ -78,13 +101,9 @@ void InvertedIndex::merge(const InvertedIndex& other) {
             if (posting.documentId < incoming.documentId) {
                 merged.push_back(posting);
                 ++left;
-            } else if (posting.documentId > incoming.documentId) {
+            } else {
                 merged.push_back(incoming);
                 ++right;
-            } else {
-                throw std::runtime_error("duplicate posting for document " +
-                                         std::to_string(posting.documentId) +
-                                         " in term '" + term + "'");
             }
         }
         while (left < target.size()) {

@@ -29,8 +29,88 @@ void requireFailure(Operation operation, const std::string& message) {
     require(failed, message);
 }
 
+void requireSameIndex(const InvertedIndex& actual, const InvertedIndex& expected,
+                      const std::string& message) {
+    require(actual.termCount() == expected.termCount(), message);
+    for (const auto& [term, postings] : expected.postings()) {
+        const auto* found = actual.find(term);
+        require(found != nullptr && found->size() == postings.size(), message);
+        for (std::size_t i = 0; i < postings.size(); ++i) {
+            require((*found)[i].documentId == postings[i].documentId &&
+                        (*found)[i].termFrequency == postings[i].termFrequency &&
+                        (*found)[i].lines == postings[i].lines,
+                    message);
+        }
+    }
+}
+
+void testMergeConflict(bool extendExisting) {
+    InvertedIndex source;
+    source.add("alpha", 3, 2);
+    source.add("beta", 3, 4);
+    const auto sourceBefore = source;
+
+    // Derive the conflict from actual iteration order, not hash implementation details.
+    auto entry = source.postings().begin();
+    const auto firstTerm = entry->first;
+    const auto conflictTerm = (++entry)->first;
+    InvertedIndex target;
+    target.add("untouched", 9, 1);
+    target.add(conflictTerm, 1, 1);
+    target.add(conflictTerm, 3, 5);
+    target.add(conflictTerm, 3, 5);
+    target.add(conflictTerm, 3, 7);
+    if (extendExisting) {
+        target.add(firstTerm, 1, 3);
+    }
+    const auto before = target;
+    bool failed = false;
+    try {
+        target.merge(source);
+    } catch (const std::runtime_error& error) {
+        failed = true;
+        require(std::string(error.what()) ==
+                    "duplicate posting for document 3 in term '" + conflictTerm + "'",
+                "merge must preserve duplicate error details");
+    }
+    require(failed, "late duplicate posting must throw runtime_error");
+    requireSameIndex(target, before, extendExisting
+        ? "failed merge must not extend an earlier term"
+        : "failed merge must not insert an earlier term");
+    requireSameIndex(source, sourceBefore, "failed merge must preserve source");
+}
+
 int main() {
     try {
+        testMergeConflict(false);
+        testMergeConflict(true);
+
+        InvertedIndex target;
+        target.add("shared", 2, 3);
+        target.add("shared", 4, 5);
+        InvertedIndex source;
+        source.add("shared", 1, 2);
+        source.add("shared", 3, 4);
+        source.add("shared", 5, 6);
+        source.add("distinct", 2, 1);
+        const auto sourceBefore = source;
+        target.merge(source);
+        InvertedIndex expected = source;
+        expected.add("shared", 2, 3);
+        expected.add("shared", 4, 5);
+        requireSameIndex(target, expected, "merge must keep interleaved postings sorted");
+        requireSameIndex(source, sourceBefore, "successful merge must preserve source");
+        InvertedIndex empty;
+        target.merge(empty);
+        requireSameIndex(target, expected, "empty source must leave target unchanged");
+        empty.merge(target);
+        requireSameIndex(empty, expected, "empty target must receive all postings");
+        requireFailure([&] { target.merge(target); }, "nonempty self merge must fail");
+        requireSameIndex(target, expected, "failed self merge must preserve all postings");
+        InvertedIndex emptySelf;
+        emptySelf.merge(emptySelf);
+        require(emptySelf.empty(), "empty self merge must remain empty");
+
         InvertedIndex index;
         require(index.empty() && index.termCount() == 0 && index.postingCount() == 0,
                 "new index must be empty");

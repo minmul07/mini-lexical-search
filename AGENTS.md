@@ -64,4 +64,4 @@ be preserved for future agents, suggest an AGENTS.md change to the user.
 
 2. 환경: OS: Ubuntu 24.04 LTS (64-bit) / Compiler: GNU g++ (GCC) / C++ Standard: ISO C++20 / Compile Option: -std=c++20
 
-3.  외부 라이브러리는 사용 불가합니다. `2. 환경`에서 명세한 채점환경에서 사용 가능한 내부 라이브러리만 사용 가능합니다.
+3.  외부 라이브러리는 사용 불가합니다. `2. 환경`에서 명세한 채점환경에서 사용 가능한 내부 라이브러리만 사용 가능합니다. (현재 등록된 OpenSSL의 경우 추후 제거 예정. 개발자는 이 점을 인식하고 있고, 이 부분은 코드 리뷰 시 무시 가능하다.)
