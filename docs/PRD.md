@@ -121,7 +121,7 @@ documents/
 사용자가 다음과 같이 검색한다.
 
 ```text
-> search 자료구조
+> /search 자료구조
 ```
 
 출력:
@@ -213,6 +213,32 @@ documents/
 
 # 7. Indexing
 
+프로젝트 루트에서 다음 명령으로 앱을 실행한다.
+
+```bash
+./build/mini_lexical_search start
+```
+
+실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 저장하고, 추가·변경된 문서만 줄 단위로 토큰화하여 `tokenCount`를 기록한 뒤 Line-aware Inverted Index에 반영한다. 심볼릭 링크는 제외하고 첫 저장 시 절대 경로순으로 ID를 0부터 부여하며, 이후에는 기존 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 유지한다.
+
+인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.json` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 조용히 덮어쓰지 않고 오류로 보고하며, `/index`는 해당 실행에서 갱신을 거부한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다.
+
+```json
+{
+  "version": 1,
+  "documents": [
+    {"id": 0, "path": "/absolute/path/documents/example.md", "title": "example.md", "tokenCount": 2, "hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
+  ],
+  "invertedIndex": {
+    "자료구조": [
+      {"documentId": 0, "termFrequency": 2, "lines": [1, 4]}
+    ]
+  }
+}
+```
+
+문서 메타데이터만 다루는 `saveDocuments`/`loadDocuments`와 `.data/documents.json` 배열 형식은 라이브러리 API와 테스트에서 그대로 유지한다.
+
 ## 7.1 Document ID
 
 모든 문서에는 내부적으로 고유한 정수 ID를 부여한다.
@@ -237,10 +263,11 @@ struct Document {
     std::string path;
     std::string title;
     uint32_t tokenCount;
+    std::string hash; // 원문 바이트의 SHA-256 (소문자 16진수 64자리)
 };
 ```
 
-`tokenCount`는 정규화 이후 토큰 수이며, 문서 길이로 사용한다.
+`tokenCount`는 정규화 이후 토큰 수이며, 문서 길이로 사용한다. `collectDocuments`는 파일 수집 단계이므로 `0`으로 두고, 변경된 문서를 토큰화하는 단계에서 실제 토큰 수로 채운다. 변경 없는 문서는 기존 값을 유지한다.
 
 ---
 
@@ -288,6 +315,15 @@ for (uint32_t line = 1; std::getline(file, text); ++line) {
 줄 1  공부
 줄 2  있다
 ```
+
+P0에서는 `SimpleTokenizer`를 사용하며 규칙은 다음과 같다.
+
+* ASCII 공백으로 분리한다.
+* ASCII 영문은 소문자로 변환한다.
+* ASCII 문장부호와 제어문자는 제거한다.
+* `0x80` 이상 바이트(UTF-8 한국어 등)는 그대로 유지한다.
+
+파일을 읽는 쪽(`tokenizeDocuments`)이 줄마다 1부터 번호를 붙여 `Tokenizer::tokenize`를 호출하고, 돌려받은 토큰 전부를 그 줄 번호와 함께 방출한다. 문서별 정규화 토큰 수는 `Document.tokenCount`에 기록한다. 토큰화는 추가·변경된 문서에 대해서만 수행하고 변경 없는 문서는 건너뛴다. 방출된 토큰은 `InvertedIndex::add`로 전달되어 역색인에 기록된다.
 
 `index.add`는 같은 문서·같은 토큰에 대해 다음을 갱신한다.
 
@@ -377,6 +413,8 @@ std::unordered_map<
 * Posting List는 `documentId` 오름차순
 * 한 Posting의 `lines`는 중복 없는 오름차순
 
+구현에서는 `InvertedIndex` 클래스가 `std::unordered_map<std::string, PostingList>`를 소유한다. `add`가 토큰이 나올 때마다 호출되어 정렬 순서를 유지하며, 같은 줄 번호는 한 번만 넣고 `termFrequency`는 매번 증가시킨다. 문서가 변경되면 `removeDocument`로 그 문서의 Posting을 모두 버린 뒤 새 토큰으로 다시 채우고, 삭제된 문서도 같은 방식으로 제거한다. Posting List가 비면 term 자체를 지운다. 변경 없는 문서의 Posting은 건드리지 않는다.
+
 줄 원문과 줄의 byte offset은 Index에 넣지 않는다.
 
 조회 이후의 흐름:
@@ -457,9 +495,9 @@ Line Numbers
 질의 형태:
 
 ```text
-search 자료구조
-search 자료구조 AND 알고리즘
-search 자료구조 OR 안드로이드
+/search 자료구조
+/search 자료구조 AND 알고리즘
+/search 자료구조 OR 안드로이드
 ```
 
 ## 단일 키워드
@@ -720,8 +758,8 @@ Indexing 과정에서 발견된 Vocabulary를 Trie에 저장한다.
 
 P0에서 사용한다.
 
-* 공백 분리
-* 특수문자 제거
+* ASCII 영문·숫자와 한글(완성형·자모)만 토큰으로 유지
+* 그 밖의 문자(공백·특수문자·이모지·BOM·기타 언어)는 토큰을 분리하고 제외
 * 영문 lowercase 변환
 
 ### KoreanTokenizer
@@ -766,6 +804,7 @@ P1 이후 선택적으로 적용한다.
 * TXT / Markdown 문서 읽기
 * 줄 단위 Tokenization과 출처 줄 번호 기록
 * Line-aware Inverted Index 생성
+* Line-aware Inverted Index JSON 저장 / 로드
 * Posting List (`documentId`, `termFrequency`, `lines`)
 * 단일 Keyword Search
 * 문서당 최대 3개의 매칭 줄 출력
@@ -799,7 +838,6 @@ Line-aware Index 생성
 * 한국어 Tokenization 개선
 * Kiwi 연동 검토
 * Stop Word 처리
-* Index 저장 / 로드
 
 ---
 
@@ -947,7 +985,7 @@ P0 기준 프로젝트 성공 조건:
 
 ### Core
 
-* C++17 이상
+* ISO C++20 (`-std=c++20`)
 * CMake
 * STL
 

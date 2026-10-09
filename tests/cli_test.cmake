@@ -1,0 +1,155 @@
+set(fixture "${CMAKE_CURRENT_BINARY_DIR}/cli_fixture")
+file(REMOVE_RECURSE "${fixture}")
+file(MAKE_DIRECTORY "${fixture}")
+
+function(check_cli name input expected_exit expected_output)
+    set(input_file "${CMAKE_CURRENT_BINARY_DIR}/cli_${name}_input.txt")
+    file(WRITE "${input_file}" "${input}")
+    execute_process(
+        COMMAND "${APP}" ${ARGN}
+        WORKING_DIRECTORY "${fixture}"
+        INPUT_FILE "${input_file}"
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error
+        RESULT_VARIABLE result
+        TIMEOUT 5)
+    file(REMOVE "${input_file}")
+    if(NOT "${result}" STREQUAL "${expected_exit}")
+        message(FATAL_ERROR "${name}: exit ${result}; stdout=${output}; stderr=${error}")
+    endif()
+    string(FIND "${output}${error}" "${expected_output}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "${name}: missing '${expected_output}'; stdout=${output}; stderr=${error}")
+    endif()
+    set(last_output "${output}" PARENT_SCOPE)
+endfunction()
+
+foreach(option -h --help)
+    check_cli("help_${option}" "" 0 "/index" "${option}")
+    check_cli("start_help_${option}" "" 0 "/index" start "${option}")
+endforeach()
+foreach(option -v --version)
+    check_cli("version_${option}" "" 0 "mini_lexical_search 버전 0.1.0" "${option}")
+    check_cli("start_version_${option}" "" 0 "mini_lexical_search 버전 0.1.0" start "${option}")
+endforeach()
+
+check_cli(no_arguments "" 1 "사용법:")
+check_cli(old_directory "" 1 "unexpected argument" "${CMAKE_CURRENT_LIST_DIR}")
+check_cli(index_argument "" 1 "unexpected argument" index)
+check_cli(unknown_option "" 1 "unexpected argument" --unknown)
+check_cli(extra_argument "" 1 "unexpected argument" start docs)
+check_cli(eof "" 0 "Mini Lexical Search started." start)
+
+check_cli(commands "\n  \t\n /index \n/search 자료구조 알고리즘\n/help\n/search\n/index extra\n/exit extra\n/indexing\n/searching query\nsearch query\n/unknown\n/index\n/exit\n/unknown_after_exit\n"
+    0 "error: indexing failed:" start)
+foreach(expected
+        "Search arrives in P0." "사용법:" "Usage: /search <query>"
+        "not a directory: extra" "unexpected arguments for /exit"
+        "Unknown command: /indexing" "Unknown command: /searching query"
+        "Unknown command: search query" "Unknown command: /unknown")
+    string(FIND "${last_output}" "${expected}" found)
+    if(found EQUAL -1)
+        message(FATAL_ERROR "commands: missing '${expected}'; stdout=${last_output}")
+    endif()
+endforeach()
+string(FIND "${last_output}" "unknown_after_exit" found)
+if(NOT found EQUAL -1)
+    message(FATAL_ERROR "commands: /exit did not stop input processing")
+endif()
+string(FIND "${last_output}" "updated file metadata (" found)
+if(NOT found EQUAL -1)
+    message(FATAL_ERROR "commands: failed indexing reported metadata completion")
+endif()
+if(EXISTS "${fixture}/.data/index.json")
+    message(FATAL_ERROR "commands: failed indexing must not create a snapshot")
+endif()
+
+check_cli(quit " /quit \n/unknown_after_quit\n" 0 "Mini Lexical Search started." start)
+string(FIND "${last_output}" "unknown_after_quit" found)
+if(NOT found EQUAL -1)
+    message(FATAL_ERROR "quit: /quit did not stop input processing")
+endif()
+
+file(MAKE_DIRECTORY "${fixture}/documents/recap")
+file(WRITE "${fixture}/documents/recap/example.md" "# recap\n")
+check_cli(index_relative "/index documents/recap\n/exit\n" 0
+    "0 not updated, 0 updated, 1 added, 0 deleted" start)
+if(NOT last_output MATCHES "updating file metadata[.][.]\nupdated file metadata [(][0-9]+ ms[)]\n0 not updated, 0 updated, 1 added, 0 deleted\ntokenizing documents[.][.]\ntokenized 1 documents [(][0-9]+ ms[)]")
+    message(FATAL_ERROR "index_relative: missing ordered metadata/tokenization messages and elapsed milliseconds: ${last_output}")
+endif()
+file(READ "${fixture}/.data/index.json" json)
+string(JSON version GET "${json}" version)
+string(JSON count LENGTH "${json}" documents)
+string(JSON path GET "${json}" documents 0 path)
+string(JSON token_count GET "${json}" documents 0 tokenCount)
+string(JSON terms LENGTH "${json}" invertedIndex)
+string(JSON term MEMBER "${json}" invertedIndex 0)
+string(JSON tf GET "${json}" invertedIndex "recap" 0 termFrequency)
+string(JSON lines_length LENGTH "${json}" invertedIndex "recap" 0 lines)
+string(JSON line GET "${json}" invertedIndex "recap" 0 lines 0)
+if(NOT version EQUAL 1 OR NOT count EQUAL 1
+        OR NOT path STREQUAL "${fixture}/documents/recap/example.md"
+        OR NOT token_count EQUAL 1 OR NOT terms EQUAL 1 OR NOT term STREQUAL "recap"
+        OR NOT tf EQUAL 1 OR NOT lines_length EQUAL 1 OR NOT line EQUAL 1)
+    message(FATAL_ERROR "relative input did not save the expected snapshot: ${json}")
+endif()
+
+file(MAKE_DIRECTORY "${fixture}/documents")
+file(WRITE "${fixture}/documents/default.txt" "default input\n")
+check_cli(index_default "/index\n/exit\n" 0
+    "1 not updated, 0 updated, 1 added, 0 deleted" start)
+file(READ "${fixture}/.data/index.json" json)
+string(JSON count LENGTH "${json}" documents)
+string(JSON title GET "${json}" documents 0 title)
+string(JSON token_count GET "${json}" documents 0 tokenCount)
+string(JSON terms LENGTH "${json}" invertedIndex)
+string(JSON tf GET "${json}" invertedIndex "default" 0 termFrequency)
+string(JSON document_id GET "${json}" invertedIndex "default" 0 documentId)
+if(NOT count EQUAL 2 OR NOT title STREQUAL "default.txt" OR NOT token_count EQUAL 2
+        OR NOT terms EQUAL 3 OR NOT tf EQUAL 1 OR NOT document_id EQUAL 1)
+    message(FATAL_ERROR "default input did not replace the saved snapshot: ${json}")
+endif()
+check_cli(index_unchanged "/index\n/exit\n" 0
+    "2 not updated, 0 updated, 0 added, 0 deleted" start)
+string(FIND "${last_output}" "tokenized 0 documents" found)
+if(found EQUAL -1)
+    message(FATAL_ERROR "index_unchanged: unchanged documents must not be tokenized: ${last_output}")
+endif()
+file(READ "${fixture}/.data/index.json" unchanged_json)
+if(NOT unchanged_json STREQUAL json)
+    message(FATAL_ERROR "index_unchanged: unchanged run rewrote the snapshot: ${unchanged_json}")
+endif()
+
+file(WRITE "${fixture}/documents/default.txt" "changed input\n")
+file(REMOVE "${fixture}/documents/recap/example.md")
+file(WRITE "${fixture}/documents/new.md" "new document\n")
+check_cli(index_changed "/index\n/exit\n" 0
+    "0 not updated, 1 updated, 1 added, 1 deleted" start)
+file(READ "${fixture}/.data/index.json" json)
+string(JSON count LENGTH "${json}" documents)
+string(JSON terms LENGTH "${json}" invertedIndex)
+string(JSON new_id GET "${json}" invertedIndex "new" 0 documentId)
+if(NOT count EQUAL 2 OR NOT terms EQUAL 4 OR NOT new_id EQUAL 2)
+    message(FATAL_ERROR "changed input did not rebuild the snapshot: ${json}")
+endif()
+string(FIND "${json}" "recap" found)
+if(NOT found EQUAL -1)
+    message(FATAL_ERROR "changed input kept the deleted document postings: ${json}")
+endif()
+
+file(WRITE "${fixture}/.data/index.json" "not json")
+check_cli(index_corrupt "/index\n/exit\n" 0 "cannot load" start)
+string(FIND "${last_output}" "index snapshot is not loaded" found)
+if(found EQUAL -1)
+    message(FATAL_ERROR "index_corrupt: /index must refuse a damaged snapshot: ${last_output}")
+endif()
+string(FIND "${last_output}" "updated file metadata (" found)
+if(NOT found EQUAL -1)
+    message(FATAL_ERROR "index_corrupt: damaged snapshot must not be overwritten: ${last_output}")
+endif()
+file(READ "${fixture}/.data/index.json" corrupt_json)
+if(NOT corrupt_json STREQUAL "not json")
+    message(FATAL_ERROR "index_corrupt: damaged snapshot was overwritten: ${corrupt_json}")
+endif()
+
+file(REMOVE_RECURSE "${fixture}")

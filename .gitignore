@@ -17,3 +17,11 @@ Testing/
 # AI
 .agents/
 .cursor/
+
+# Documents
+documents/
+
+# Generated data
+.data/
+
+제출조건.md

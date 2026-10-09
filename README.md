@@ -20,7 +20,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ## 예시
 
 ```text
-> search 자료구조
+> /search 자료구조
 
 1. data_structure.md       score: 8.72
    12: 자료구조는 데이터를 효율적으로 저장하는 방법이다.
@@ -32,7 +32,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ```bash
 cmake -S . -B build
 cmake --build build -j
-./build/mini_lexical_search <documents_directory>
+./build/mini_lexical_search start
 ```
 
 테스트:
@@ -43,6 +43,12 @@ ctest --test-dir build --output-on-failure
 
 자세한 내용은 [개발 환경](docs/DEVELOPMENT.md)을 참고한다.
 
+앱 실행 후 표준 입력으로 `/index [디렉터리]`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. `/index`는 기본 `./documents` 또는 지정한 디렉터리의 `.txt`·`.md` 문서 메타데이터를 `.data/index.json`에 저장한다. 각 문서에는 원문 바이트의 SHA-256 `hash`를 저장하고, 이전 목록과 비교해 `n not updated, n updated, n added, n deleted`를 출력한다. 변경이 없으면 JSON을 다시 쓰지 않는다. 이어서 추가·변경된 문서만 줄 단위로 토큰화하여 정규화 토큰 수를 `tokenCount`에 기록하고, 토큰·등장 횟수·줄 번호를 Line-aware Inverted Index에 반영한 뒤 `tokenized <문서 수> documents (<시간> ms)`로 소요 시간을 출력한다. 변경 없는 문서는 토큰화와 Posting 갱신을 건너뛴다. 앱은 시작할 때 스냅샷을 로드하므로 재실행 후에도 인덱스를 그대로 사용하며, 손상된 스냅샷은 덮어쓰지 않고 오류로 보고한다. 검색은 아직 미구현이다.
+
+`-h`, `--help`, `-v`, `--version`은 실행 시 옵션으로 사용할 수 있다.
+
+저장 위치는 현재 작업 디렉터리 기준이다. 저장 시 `.data/`가 없으면 생성을 시도하므로 해당 경로에 대한 쓰기 권한이 필요하다.
+
 ## 문서
 
 * [PRD](docs/PRD.md)
@@ -52,9 +58,9 @@ ctest --test-dir build --output-on-failure
 
 * **P0** — TXT/Markdown 인덱싱, 단일 키워드 검색, TF Ranking, Top-K, 매칭 줄 출력
 * **P1** — AND/OR 검색, TF-IDF/BM25, Trie 자동완성, 한국어 형태소 분석(Kiwi)
-* **P2** — Semantic Search (Embedding)
-* **P3** — Hybrid / ANN Search
+* **P2** — Hybrid / ANN Search / PDF 인덱싱
+* **P3** — Semantic Search (Embedding)
 
 ## 기술 스택
 
-C++17 이상, CMake, STL
+ISO C++20 (`-std=c++20`), CMake, STL, OpenSSL Crypto (SHA-256)
