@@ -6,7 +6,6 @@
 | --- | --- | --- |
 | C++ | ISO C++20 (`-std=c++20`) | `g++ 13.3.0`에서 확인 |
 | CMake | 3.20 이상 | 빌드/테스트 |
-| OpenSSL | — | SHA-256 계산용 libcrypto 헤더·라이브러리 (`libssl-dev`) |
 | Compiler | GCC / Clang | `-Wall -Wextra -Wpedantic` 적용 |
 
 `cmake`와 `ctest`는 시스템에 설치되어 있다 (`/usr/bin/cmake`, 3.28.3에서 확인).
@@ -18,7 +17,7 @@ cmake --version
 없는 경우:
 
 ```bash
-sudo apt install cmake libssl-dev
+sudo apt install cmake
 ```
 
 ## 빌드
@@ -90,10 +89,12 @@ mini-lexical-search/
 
 실행 환경, 문서 메타데이터·토큰화, Line-aware Inverted Index와 JSON 스냅샷 저장·로드를 구현한 상태이다.
 
-* 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, Document 수집·JSON 저장, SimpleTokenizer 기반 토큰화와 `tokenCount`, 변경 문서 토큰화 게이트, `unordered_map` 기반 Inverted Index, `.data/index.json` 스냅샷 저장·로드, CTest 테스트
+* 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, Document 수집·SHA-256 해시·JSON 저장, SimpleTokenizer 기반 토큰화와 `tokenCount`, 변경 문서 토큰화 게이트, `unordered_map` 기반 Inverted Index, `.data/index.json` 스냅샷 저장·로드, CTest 테스트
 * 미구현: 검색(Query Processing), Ranking, Top-K, AND/OR
 
-`src/document.cpp`는 재귀 문서 수집, Document 배열의 JSON 저장, 그리고 변경 문서 토큰화를 담당한다. 하위 디렉터리를 포함해 소문자 `.txt`·`.md` 일반 파일만 수집하며 심볼릭 링크는 제외한다. 첫 저장 시 절대 경로순으로 정렬하고 ID를 0부터 부여한다. 이후에는 기존 문서 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `title`은 확장자를 포함한 파일명이다. 문서 원문을 바이너리 스트림으로 읽어 SHA-256 `hash`를 계산한다. `prepareIndex`가 이전 문서 테이블과 비교해 `notUpdated`/`updated`/`added`/`deleted`를 분류하고, 추가·변경된 문서의 인덱스만 `toTokenize`에, 변경·삭제된 문서 ID를 `removed`에 담는다. `tokenizeDocuments`는 `toTokenize`의 문서만 열어 `std::getline`으로 줄 단위(1부터 시작)로 읽고 `Tokenizer::tokenize` 결과를 줄 번호와 함께 방출하며, 문서별 토큰 수를 `tokenCount`에 기록한다. 같은 해시·제목인 문서는 재토큰화하지 않고 기존 `tokenCount`를 유지하며, 변경이 감지된 문서는 이전 토큰 결과를 버리고 처음부터 다시 만든다.
+`src/document.cpp`는 재귀 문서 수집, Document 배열의 JSON 저장, 그리고 변경 문서 토큰화를 담당한다. 하위 디렉터리를 포함해 소문자 `.txt`·`.md` 일반 파일만 수집하며 심볼릭 링크는 제외한다. 첫 저장 시 절대 경로순으로 정렬하고 ID를 0부터 부여한다. 이후에는 기존 문서 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `title`은 확장자를 포함한 파일명이다. 문서 원문을 바이너리 스트림으로 읽어 자체 구현한 SHA-256으로 `hash`를 계산한다. `prepareIndex`가 이전 문서 테이블과 비교해 `notUpdated`/`updated`/`added`/`deleted`를 분류하고, 추가·변경된 문서의 인덱스만 `toTokenize`에, 변경·삭제된 문서 ID를 `removed`에 담는다. `tokenizeDocuments`는 `toTokenize`의 문서만 열어 `std::getline`으로 줄 단위(1부터 시작)로 읽고 `Tokenizer::tokenize` 결과를 줄 번호와 함께 방출하며, 문서별 토큰 수를 `tokenCount`에 기록한다. 같은 해시·제목인 문서는 재토큰화하지 않고 기존 `tokenCount`를 유지하며, 변경이 감지된 문서는 이전 토큰 결과를 버리고 처음부터 다시 만든다.
+
+`src/sha256.cpp`는 FIPS 180-4 SHA-256을 외부 라이브러리 없이 구현한다. `Sha256` 클래스가 `update`로 임의 길이의 바이트를 이어 받아 64바이트 블록 단위로 압축하고, `finish`에서 `0x80` 패딩과 64비트 길이를 붙여 32바이트 다이제스트를 만든다. 입력을 호출 경계와 무관하게 이어 붙이므로 대용량 파일을 청크로 나눠 읽어도 같은 결과를 내며, `toHex`가 소문자 16진수 64자를 반환한다. `sha256`은 한 번에 해시하는 편의 함수이다.
 
 `src/tokenizer.cpp`는 `SimpleTokenizer`를 구현한다. UTF-8을 코드 포인트 단위로 해석하여 ASCII 영문·숫자와 한글(완성형 음절·자모·호환 자모·확장 자모)만 토큰 문자로 유지하고, ASCII 영문은 소문자로 바꾼다. 그 밖의 모든 코드 포인트(공백·문장부호·이모지·BOM·기타 언어)는 토큰 구분자로 삼아 앞뒤 토큰을 분리하고 결과에서 제외한다. 연속된 구분자는 빈 토큰을 만들지 않으며, 허용 문자끼리는 언어가 달라도 합쳐서 하나의 토큰으로 둔다. 오버롱 인코딩·서로게이트·`U+10FFFF` 초과·잘린 시퀀스 등 잘못된 UTF-8 바이트도 구분자로 처리한다.
 
