@@ -13,6 +13,12 @@ add_test(
     NAME tokenizer_test
     COMMAND tokenizer_test)
 
+add_executable(sha256_test sha256_test.cpp)
+target_link_libraries(sha256_test PRIVATE mini_lexical_search_core)
+add_test(
+    NAME sha256_test
+    COMMAND sha256_test)
+
 add_executable(inverted_index_test inverted_index_test.cpp)
 target_link_libraries(inverted_index_test PRIVATE mini_lexical_search_core)
 add_test(

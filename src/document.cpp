@@ -4,13 +4,11 @@
 #include <array>
 #include <fstream>
 #include <limits>
-#include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
-#include <openssl/evp.h>
-
 #include "json_internal.hpp"
+#include "mini_lexical_search/sha256.hpp"
 
 namespace mini_lexical_search {
 namespace {
@@ -20,32 +18,15 @@ std::string hashFile(const std::filesystem::path& path) {
     if (!input) {
         throw std::runtime_error("cannot read document: " + path.string());
     }
-    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(
-        EVP_MD_CTX_new(), EVP_MD_CTX_free);
-    if (!context || EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
-        throw std::runtime_error("cannot initialize SHA-256");
-    }
+    Sha256 hasher;
     std::array<char, 65536> buffer;
     while (input.read(buffer.data(), buffer.size()) || input.gcount() > 0) {
-        if (EVP_DigestUpdate(context.get(), buffer.data(), input.gcount()) != 1) {
-            throw std::runtime_error("cannot hash document: " + path.string());
-        }
+        hasher.update(buffer.data(), static_cast<std::size_t>(input.gcount()));
     }
     if (input.bad() || !input.eof()) {
         throw std::runtime_error("cannot read document: " + path.string());
     }
-    std::array<unsigned char, EVP_MAX_MD_SIZE> digest;
-    unsigned int length = 0;
-    if (EVP_DigestFinal_ex(context.get(), digest.data(), &length) != 1) {
-        throw std::runtime_error("cannot finalize SHA-256");
-    }
-    constexpr char hex[] = "0123456789abcdef";
-    std::string hash;
-    for (unsigned int i = 0; i < length; ++i) {
-        hash += hex[digest[i] >> 4];
-        hash += hex[digest[i] & 0xf];
-    }
-    return hash;
+    return toHex(hasher.finish());
 }
 
 }  // namespace
