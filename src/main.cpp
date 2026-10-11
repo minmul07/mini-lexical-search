@@ -5,14 +5,18 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <unordered_map>
 
 #include "mini_lexical_search/document.hpp"
 #include "mini_lexical_search/indexer.hpp"
+#include "mini_lexical_search/matching_lines.hpp"
+#include "mini_lexical_search/query_processor.hpp"
 #include "mini_lexical_search/version.hpp"
 
 namespace {
 
 constexpr const char* kIndexPath = ".data/index.json";
+constexpr std::size_t kMaxMatchingLines = 0;  // Zero means unlimited per document.
 
 void printUsage(const char* program) {
     std::cout
@@ -25,13 +29,11 @@ void printUsage(const char* program) {
         << "  -v, --version  버전 정보 출력\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  /search <검색어>    색인된 문서 검색 (미구현)\n"
+        << "  /search <검색어>    모든 매칭 문서·행 검색 (AND 또는 OR 지원)\n"
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }
 
-// Metadata, tokenization, and the persisted inverted index are available; the
-// query side (search) remains P0 work.
 void runRepl(const char* program) {
     std::cout << "Mini Lexical Search started.\n"
               << "Type '/help' for commands, '/exit' to quit.\n";
@@ -101,8 +103,39 @@ void runRepl(const char* program) {
         if (command == "/search") {
             if (arguments.empty()) {
                 std::cout << "Usage: /search <query>\n";
+            } else if (!indexLoaded) {
+                std::cout << "error: index snapshot is not loaded; fix or remove " << kIndexPath << "\n";
             } else {
-                std::cout << "(not implemented yet) Search arrives in P0.\n";
+                try {
+                    mini_lexical_search::SimpleTokenizer tokenizer;
+                    const auto query = mini_lexical_search::parseQuery(arguments, tokenizer);
+                    const auto candidates = mini_lexical_search::QueryProcessor{}.process(query, snapshot.index);
+                    if (candidates.empty()) std::cout << "No matches.\n";
+                    std::unordered_map<mini_lexical_search::DocumentId, const mini_lexical_search::Document*> documents;
+                    for (const auto& document : snapshot.documents) documents.emplace(document.id, &document);
+                    for (std::size_t i = 0; i < candidates.size(); ++i) {
+                        const auto& candidate = candidates[i];
+                        const auto& document = *documents.at(candidate.documentId);
+                        std::cout << i + 1 << ". " << document.title << " (" << document.path
+                                  << ")    score: " << candidate.score << "\n";
+                        try {
+                            const auto lines = mini_lexical_search::readMatchingLines(
+                                document, candidate.matchedLines, kMaxMatchingLines);
+                            for (const auto& match : lines) {
+                                std::cout << "   " << match.number << ": " << match.text << "\n";
+                            }
+                            if (lines.size() < candidate.matchedLines.size()) {
+                                std::cout << "   + " << candidate.matchedLines.size() - lines.size()
+                                          << " more matches\n";
+                            }
+                        } catch (const std::exception& error) {
+                            std::cout << "   warning: " << error.what() << "\n";
+                        }
+                    }
+                } catch (const std::exception& error) {
+                    std::cout << "error: search failed: " << error.what()
+                              << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
+                }
             }
             continue;
         }

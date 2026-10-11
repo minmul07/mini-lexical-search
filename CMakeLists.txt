@@ -22,6 +22,8 @@ add_library(mini_lexical_search_core
     src/indexer.cpp
     src/inverted_index.cpp
     src/json.cpp
+    src/matching_lines.cpp
+    src/query_processor.cpp
     src/sha256.cpp
     src/tokenizer.cpp
     src/version.cpp)
