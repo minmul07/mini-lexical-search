@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "mini_lexical_search/inverted_index.hpp"
+#include "mini_lexical_search/domain/inverted_index.hpp"
 
 using mini_lexical_search::DocumentId;
 using mini_lexical_search::InvertedIndex;

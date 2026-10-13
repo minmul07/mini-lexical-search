@@ -1,7 +1,7 @@
 #pragma once
 
-#include "mini_lexical_search/inverted_index.hpp"
-#include "mini_lexical_search/tokenizer.hpp"
+#include "mini_lexical_search/domain/inverted_index.hpp"
+#include "mini_lexical_search/domain/tokenizer.hpp"
 
 namespace mini_lexical_search {
 

@@ -1,4 +1,4 @@
-#include "mini_lexical_search/sha256.hpp"
+#include "mini_lexical_search/infrastructure/sha256.hpp"
 
 #include <algorithm>
 #include <cstring>

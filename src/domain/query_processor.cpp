@@ -1,4 +1,4 @@
-#include "mini_lexical_search/query_processor.hpp"
+#include "mini_lexical_search/domain/query_processor.hpp"
 
 #include <algorithm>
 #include <iterator>

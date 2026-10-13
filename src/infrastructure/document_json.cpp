@@ -1,4 +1,4 @@
-#include "mini_lexical_search/document.hpp"
+#include "mini_lexical_search/infrastructure/document_io.hpp"
 
 #include <fstream>
 #include <iterator>

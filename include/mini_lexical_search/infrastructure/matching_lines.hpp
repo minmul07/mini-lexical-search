@@ -1,14 +1,11 @@
 #pragma once
 
 #include <cstddef>
-#include "mini_lexical_search/document.hpp"
+#include <vector>
+#include "mini_lexical_search/domain/matching_line.hpp"
+#include "mini_lexical_search/domain/document.hpp"
 
 namespace mini_lexical_search {
-
-struct MatchingLine {
-    std::uint32_t number;
-    std::string text;
-};
 
 // Reads the file once up to the last requested line. Input must be positive,
 // unique and ascending. Zero limit means all lines; otherwise the first N.

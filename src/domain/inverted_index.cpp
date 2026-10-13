@@ -1,4 +1,4 @@
-#include "mini_lexical_search/inverted_index.hpp"
+#include "mini_lexical_search/domain/inverted_index.hpp"
 
 #include <algorithm>
 #include <stdexcept>

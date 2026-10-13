@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "mini_lexical_search/document.hpp"
+#include "mini_lexical_search/domain/document.hpp"
 
 namespace mini_lexical_search::json {
 

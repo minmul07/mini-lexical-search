@@ -1,4 +1,4 @@
-#include "mini_lexical_search/indexer.hpp"
+#include "mini_lexical_search/infrastructure/index_storage.hpp"
 
 #include <algorithm>
 #include <cstdint>

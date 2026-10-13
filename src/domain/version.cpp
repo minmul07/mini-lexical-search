@@ -1,4 +1,4 @@
-#include "mini_lexical_search/version.hpp"
+#include "mini_lexical_search/domain/version.hpp"
 
 namespace mini_lexical_search {
 

@@ -1,4 +1,4 @@
-#include "mini_lexical_search/matching_lines.hpp"
+#include "mini_lexical_search/infrastructure/matching_lines.hpp"
 
 #include <algorithm>
 #include <fstream>

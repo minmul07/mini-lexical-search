@@ -1,20 +1,9 @@
 #pragma once
 
-#include <filesystem>
-#include <vector>
-
-#include "mini_lexical_search/document.hpp"
-#include "mini_lexical_search/inverted_index.hpp"
-#include "mini_lexical_search/tokenizer.hpp"
+#include "mini_lexical_search/application/documents.hpp"
+#include "mini_lexical_search/domain/index_snapshot.hpp"
 
 namespace mini_lexical_search {
-
-// In-memory state of the persisted search index: the document table plus the
-// line-aware inverted index. The CLI keeps one snapshot loaded while running.
-struct IndexSnapshot {
-    std::vector<Document> documents;
-    InvertedIndex index;
-};
 
 struct IndexUpdate {
     IndexStats metadata;
@@ -34,15 +23,6 @@ TokenizeStats applyIndexWork(IndexWork& work,
 void commitIndexSnapshot(std::vector<Document> documents,
                          IndexSnapshot& snapshot,
                          const std::filesystem::path& output);
-
-// Reads a snapshot file. A missing file yields an empty snapshot; damaged data
-// is rejected instead of being overwritten.
-IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input);
-
-// Atomically writes a snapshot; the previous file survives a failed save.
-void saveIndexSnapshot(const std::vector<Document>& documents,
-                       const InvertedIndex& index,
-                       const std::filesystem::path& output);
 
 // Full pipeline: compare, tokenize, rebuild postings, and save when the
 // document table changed. Returns the counters shown by `/index`.

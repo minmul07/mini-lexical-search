@@ -1,7 +1,7 @@
 #include <cstring>
 #include <iostream>
 
-#include "mini_lexical_search/version.hpp"
+#include "mini_lexical_search/domain/version.hpp"
 
 int main() {
     if (std::strcmp(mini_lexical_search::versionString(), "0.1.0") != 0) {

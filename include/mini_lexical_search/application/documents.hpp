@@ -1,24 +1,12 @@
 #pragma once
 
-#include <cstdint>
 #include <filesystem>
 #include <functional>
-#include <string>
 #include <vector>
-
-#include "mini_lexical_search/tokenizer.hpp"
+#include "mini_lexical_search/domain/document.hpp"
+#include "mini_lexical_search/domain/tokenizer.hpp"
 
 namespace mini_lexical_search {
-
-using DocumentId = std::uint32_t;
-
-struct Document {
-    DocumentId id;
-    std::string path;
-    std::string title;
-    std::uint32_t tokenCount = 0;
-    std::string hash;
-};
 
 struct IndexStats {
     std::size_t notUpdated = 0;
@@ -50,12 +38,6 @@ struct TokenizeStats {
 // and original 1-based line number. Empty for metadata-only callers.
 using TokenSink = std::function<void(DocumentId, std::uint32_t, const std::string&)>;
 
-// Recursively collects .txt/.md files and hashes their bytes without tokenizing.
-std::vector<Document> collectDocuments(const std::filesystem::path& directory);
-
-// Reads the document table, including legacy entries without a hash.
-std::vector<Document> loadDocuments(const std::filesystem::path& input);
-
 // Compares the selected directory with a previously stored document table and
 // classifies each document without writing to disk or tokenizing.
 IndexWork prepareIndex(const std::filesystem::path& directory,
@@ -78,9 +60,5 @@ TokenizeStats tokenizeDocuments(std::vector<Document>& documents,
 // documents, and save when the table changed.
 IndexStats indexDocuments(const std::filesystem::path& directory,
                           const std::filesystem::path& output);
-
-// Replaces the document table only after writing a complete JSON file.
-void saveDocuments(const std::vector<Document>& documents,
-                   const std::filesystem::path& output);
 
 }  // namespace mini_lexical_search

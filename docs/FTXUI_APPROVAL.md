@@ -20,7 +20,7 @@
 
 ## 현재 상태와 후속 검증
 
-FTXUI 사용 승인은 완료되었지만 라이브러리 포함, TUI, `--no-tui`, 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
+핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. FTXUI 사용 승인은 완료되었지만 라이브러리 포함, TUI, `--no-tui`, 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
 
 도입 후에는 [테스트 가이드](TESTING.md)의 핵심 기능·CLI 검증에 더해 다음을 확인한다.
 

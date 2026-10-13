@@ -15,25 +15,44 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
-add_library(mini_lexical_search_core
-    src/document.cpp
-    src/document_json.cpp
-    src/index_json.cpp
-    src/indexer.cpp
-    src/inverted_index.cpp
-    src/json.cpp
-    src/matching_lines.cpp
-    src/query_processor.cpp
-    src/sha256.cpp
-    src/tokenizer.cpp
-    src/version.cpp)
-target_include_directories(mini_lexical_search_core
+add_library(mini_lexical_search_domain
+    src/domain/inverted_index.cpp
+    src/domain/query_processor.cpp
+    src/domain/tokenizer.cpp
+    src/domain/version.cpp)
+target_include_directories(mini_lexical_search_domain
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(mini_lexical_search
-    src/main.cpp)
-target_link_libraries(mini_lexical_search
-    PRIVATE mini_lexical_search_core)
+add_library(mini_lexical_search_infrastructure
+    src/infrastructure/document_io.cpp
+    src/infrastructure/document_json.cpp
+    src/infrastructure/index_json.cpp
+    src/infrastructure/json.cpp
+    src/infrastructure/matching_lines.cpp
+    src/infrastructure/sha256.cpp)
+target_link_libraries(mini_lexical_search_infrastructure
+    PUBLIC mini_lexical_search_domain)
+
+add_library(mini_lexical_search_application
+    src/application/documents.cpp
+    src/application/indexer.cpp
+    src/application/search_application.cpp)
+target_link_libraries(mini_lexical_search_application
+    PUBLIC mini_lexical_search_domain
+    PRIVATE mini_lexical_search_infrastructure)
+
+# Convenience target for tests of all non-UI layers.
+add_library(mini_lexical_search_core INTERFACE)
+target_link_libraries(mini_lexical_search_core INTERFACE
+    mini_lexical_search_application mini_lexical_search_infrastructure)
+
+add_library(mini_lexical_search_cli
+    src/presentation/cli/cli.cpp)
+target_link_libraries(mini_lexical_search_cli
+    PUBLIC mini_lexical_search_application)
+
+add_executable(mini_lexical_search src/main.cpp)
+target_link_libraries(mini_lexical_search PRIVATE mini_lexical_search_cli)
 
 include(CTest)
 if(BUILD_TESTING)
