@@ -18,14 +18,14 @@ struct SearchCandidate {
     std::vector<std::uint32_t> matchedLines;
 };
 
-// Uppercase standalone AND/OR are operators. Mixed operators, implicit
-// operators, parentheses and quotes are unsupported. Throws invalid_argument.
+// 독립된 대문자 AND/OR를 연산자로 인식한다. 연산자 혼합, 암묵적 연산자,
+// 괄호와 따옴표는 지원하지 않는다. 오류 시 invalid_argument 예외를 던진다.
 ParsedQuery parseQuery(const std::string& text, Tokenizer& tokenizer);
 
 class QueryProcessor {
 public:
-    // Returns all matches in document ID order without modifying the index.
-    // Terms are normalized by parseQuery; repeated terms contribute only once.
+    // 역색인을 변경하지 않고 모든 매칭 결과를 문서 ID순으로 반환한다.
+    // 검색어는 parseQuery로 정규화하며, 반복된 검색어는 한 번만 계산에 반영한다.
     std::vector<SearchCandidate> process(const ParsedQuery& query,
                                          const InvertedIndex& index) const;
 };
