@@ -20,9 +20,9 @@
 
 ## 현재 상태와 후속 검증
 
-핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. FTXUI amalgamated 소스는 CMake 타깃으로 포함되었지만 TUI, `--no-tui`, 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
+핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. `start`의 기본 경로는 FTXUI TUI이며 `--no-tui`로 CLI REPL을 실행한다. 현재 TUI는 터미널 중앙에 `on development`만 표시하는 플레이스홀더이고, 검색 UI는 아직 연결하지 않는다. FTXUI는 `mini_lexical_search_tui`에만 링크한다. 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
 
-도입 후에는 [테스트 가이드](TESTING.md)의 핵심 기능·CLI 검증에 더해 다음을 확인한다.
+검색 TUI 도입 후에는 [테스트 가이드](TESTING.md)의 핵심 기능·CLI 검증에 더해 다음을 확인한다.
 
 * 깨끗한 채점 환경에서 네트워크·별도 설치 없이 `make` 및 프로그램 실행 성공
 * 동일 문서·질의에 대한 TUI와 `--no-tui` CLI의 검색 결과 일치

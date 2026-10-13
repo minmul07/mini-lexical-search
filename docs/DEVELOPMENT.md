@@ -35,16 +35,19 @@ Release 빌드는 `-DCMAKE_BUILD_TYPE=Release`로 지정한다.
 
 FTXUI는 UI 용도로 사용 승인을 받았다. 검색어 입력·결과 표시·키보드 처리·화면 전환·상태 시각화에만 사용하며, 핵심 자료구조와 검색 알고리즘은 STL과 직접 작성한 코드로 구현한다. FTXUI 이외의 외부 라이브러리는 사용하지 않는다.
 
-FTXUI 소스를 함께 제출하고 전체 제출 용량을 10MB 이하로 유지해야 한다. amalgamated 7.0.3은 `third_party/ftxui/`에 있으며 CMake 타깃 `ftxui`로 빌드한다. 채점 환경은 Ubuntu 24.04 LTS 64-bit / GNU g++ / C++20이며, 별도 설치·다운로드 없이 `make` 한 번으로 빌드해야 한다. 핵심 로직과 CLI는 공통 Application 계층으로 분리했다. TUI 도입 시 `--no-tui` CLI 실행 경로를 제공할 계획이다. TUI와 해당 옵션은 아직 도입되지 않았다. 상세 승인 기록과 검증 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 참고한다.
+FTXUI 소스를 함께 제출하고 전체 제출 용량을 10MB 이하로 유지해야 한다. amalgamated 7.0.3은 `third_party/ftxui/`에 있으며 CMake 타깃 `ftxui`로 빌드한다. 채점 환경은 Ubuntu 24.04 LTS 64-bit / GNU g++ / C++20이며, 별도 설치·다운로드 없이 `make` 한 번으로 빌드해야 한다. 핵심 로직과 CLI는 공통 Application 계층으로 분리했다. `start`의 기본 경로는 FTXUI TUI이며, `--no-tui`로 기존 CLI REPL을 실행한다. 현재 TUI는 검색을 연결하지 않은 플레이스홀더이다. 상세 승인 기록과 검증 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 참고한다.
 
 ## 실행
 
 ```bash
 ./build/mini_lexical_search start
+./build/mini_lexical_search start --no-tui
 ```
 
+`start`는 기본적으로 TUI를 연다. 현재는 터미널 중앙에 `on development`만 표시하며 `q`, Esc, Ctrl+C로 종료한다. 인덱싱·검색 CLI는 `--no-tui`로 실행한다.
+
 ```text
-$ ./build/mini_lexical_search start
+$ ./build/mini_lexical_search start --no-tui
 Mini Lexical Search started.
 Type '/help' for commands, '/exit' to quit.
 > /index documents/recap
@@ -62,6 +65,7 @@ No matches.
 
 * `-h`, `--help` — 도움말
 * `-v`, `--version` — 버전
+* `--no-tui` — TUI 없이 CLI로 실행. `start`와 함께 쓴다.
 
 ### 실행 중 명령
 
@@ -91,7 +95,9 @@ mini-lexical-search/
 │   ├── domain/                 # 데이터 모델·핵심 자료구조·알고리즘
 │   ├── application/            # 인덱스 상태·인덱싱·검색 절차
 │   ├── infrastructure/         # 파일 접근·해시·JSON 저장/로드
-│   └── presentation/cli/       # 명령 입력·출력
+│   └── presentation/
+│       ├── cli/                # 명령 입력·출력
+│       └── tui/                # FTXUI 플레이스홀더
 ├── tests/                      # CTest 기반 테스트
 └── docs/                       # PRD 및 개발 문서
 ```
@@ -100,14 +106,14 @@ mini-lexical-search/
 
 ### 계층 의존성과 공통 API
 
-CLI → Application → Infrastructure → Domain 방향으로 연결하며 Application도 Domain을 직접 사용한다. Domain은 다른 계층에 의존하지 않는다. Application은 파일 처리 함수를 직접 호출하고, UI 타입·콘솔 출력에 의존하지 않는다. CMake도 `mini_lexical_search_domain`, `mini_lexical_search_infrastructure`, `mini_lexical_search_application`, `mini_lexical_search_cli` 타깃으로 나눈다. `mini_lexical_search_core`는 공통 계층 테스트를 위한 INTERFACE 타깃이다.
+CLI → Application → Infrastructure → Domain 방향으로 연결하며 Application도 Domain을 직접 사용한다. TUI는 FTXUI만 사용하고 Application에는 아직 연결하지 않는다. Domain은 다른 계층에 의존하지 않는다. Application은 파일 처리 함수를 직접 호출하고, UI 타입·콘솔 출력에 의존하지 않는다. CMake도 `mini_lexical_search_domain`, `mini_lexical_search_infrastructure`, `mini_lexical_search_application`, `mini_lexical_search_cli`, `mini_lexical_search_tui` 타깃으로 나눈다. `ftxui`는 `mini_lexical_search_tui`에만 링크한다. `mini_lexical_search_core`는 공통 계층 테스트를 위한 INTERFACE 타깃이다.
 
 `application/search_application.hpp`의 `SearchApplication`이 스냅샷 경로, 메모리 인덱스, Tokenizer와 초기 로드 상태를 소유한다. 생성 시 로드하며 파일이 없으면 빈 인덱스, 손상됐으면 `ready() == false`와 `loadError()`로 원인을 제공한다. 이 실행에서는 인덱싱과 검색을 거부한다.
 
 * `index(directory, progressCallback)`는 동기적으로 인덱싱하고 `IndexUpdate`를 반환한다. 콜백은 선택 사항이며 메타데이터 시작·완료, 토큰화 시작·완료 이벤트를 순서대로 받는다. 완료 이벤트에는 해당 단계의 집계와 밀리초 시간이 있다. 토큰화 완료는 저장 완료를 의미하지 않는다. 단계 실패 시 해당 완료 이벤트는 없으며 예외를 전달한다. 저장 또는 Posting 갱신 후 콜백 실패 시 마지막 저장 상태로 복구한다. 콜백에서 앱을 재호출하거나 다른 스레드에서 동시에 접근하지 않는다.
 * `search(query, maxMatchingLines = 0)`는 문서 ID순 `SearchResult` 배열을 반환한다. 문서 정보·TF 점수·전체 매칭 행 수·추출한 원문 행·문서별 읽기 경고를 값으로 소유한다. `0`은 모든 행이며 양수는 문서당 한도다. 질의 오류는 예외로, 파일 읽기 오류는 문서별 경고로 전달한다. 검색은 스냅샷을 저장하지 않는다.
 
-공개 헤더 경로는 계층별로 변경되었다. 기존 함수 이름과 네임스페이스는 유지하지만 옛 평면 헤더 경로의 호환 래퍼는 제공하지 않는다. Document·IndexSnapshot은 Domain, 인덱싱 실행 API는 Application, 문서·스냅샷 저장 API는 Infrastructure 헤더를 사용한다. `main.cpp`는 앱을 구성하고 CLI를 실행하며, CLI는 데이터와 이벤트를 화면에 표시한다.
+공개 헤더 경로는 계층별로 변경되었다. 기존 함수 이름과 네임스페이스는 유지하지만 옛 평면 헤더 경로의 호환 래퍼는 제공하지 않는다. Document·IndexSnapshot은 Domain, 인덱싱 실행 API는 Application, 문서·스냅샷 저장 API는 Infrastructure 헤더를 사용한다. `main.cpp`는 인자를 파싱해 기본 `start`에서는 TUI를, `--no-tui`에서는 `SearchApplication`을 구성하고 CLI REPL을 실행한다. CLI는 데이터와 이벤트를 화면에 표시한다.
 
 ## 현재 상태
 
@@ -116,7 +122,8 @@ CLI → Application → Infrastructure → Domain 방향으로 연결하며 Appl
 * 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, Document 수집·SHA-256 해시·JSON 저장, SimpleTokenizer 기반 토큰화와 `tokenCount`, 변경 문서 토큰화 게이트, `unordered_map` 기반 Inverted Index, `.data/index.json` 스냅샷 저장·로드, CTest 테스트
 * 완료: 단일 키워드·AND/OR Query Processing, TF 합산 점수, 모든 매칭 문서·행 출력
 * 완료: 계층 분리, UI 독립적인 `SearchApplication` 인덱싱·검색 API와 진행 이벤트
-* 미구현: Ranking 정렬, Top-K
+* 완료: `start` 기본 TUI 플레이스홀더(중앙 `on development`)와 `--no-tui` CLI 경로
+* 미구현: Ranking 정렬, Top-K, 검색 기능이 연결된 TUI
 
 검색은 시작 시 로드한 스냅샷 또는 `/index`로 갱신한 메모리 인덱스를 조회하며 스냅샷 로드 실패 시 거부한다. `src/domain/query_processor.cpp`는 동일한 Tokenizer를 사용하는 질의 파싱과 정렬된 Posting List의 교집합·합집합을 담당한다. 반복 term은 한 번만 계산한다. 혼합 AND/OR, 괄호, 따옴표, 암묵적 연산자는 지원하지 않는다. `src/infrastructure/matching_lines.cpp`는 매칭 문서만 한 번씩 순차적으로 읽으며 기본 한도 `0`은 전체 매칭 행, 양수 한도는 문서당 앞 N개 행이다. 현재 CLI는 `0`을 사용한다. 파일 읽기 실패나 기록된 줄 부재는 문서별 경고로 처리한다. 인덱싱 후 원문 변경은 자동 검증하지 않으므로 `/index`로 갱신해야 한다.
 
