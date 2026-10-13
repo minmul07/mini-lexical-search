@@ -211,7 +211,7 @@ void writeFileAtomically(const std::filesystem::path& output,
     }
     auto temporary = output;
     temporary += ".tmp";
-    // Reserve the staging directory so concurrent writers cannot share a file.
+    // 동시 저장 작업이 같은 파일을 공유하지 않도록 staging directory를 확보한다.
     if (!std::filesystem::create_directory(temporary)) {
         throw std::runtime_error("temporary directory already exists: " + temporary.string());
     }

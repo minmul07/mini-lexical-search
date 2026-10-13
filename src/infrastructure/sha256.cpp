@@ -6,8 +6,8 @@
 namespace mini_lexical_search {
 namespace {
 
-// FIPS 180-4 round constants: first 32 bits of the fractional parts of the cube
-// roots of the first 64 primes.
+// FIPS 180-4 round constant: 처음 64개 소수의 세제곱근에서
+// 소수 부분의 첫 32비트를 사용한다.
 constexpr std::array<std::uint32_t, 64> kRoundConstants = {
     0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u,
     0x923f82a4u, 0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
@@ -22,8 +22,8 @@ constexpr std::array<std::uint32_t, 64> kRoundConstants = {
     0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u,
 };
 
-// Circular right shift; amount is always in [1, 31] here, so no undefined
-// shift of a 32-bit value by 32 occurs.
+// 오른쪽 순환 시프트(rotate right). 여기서 amount는 항상 [1, 31]이므로
+// 32비트 값을 32비트만큼 시프트하는 undefined behavior는 발생하지 않는다.
 std::uint32_t rotateRight(std::uint32_t value, unsigned int amount) {
     return (value >> amount) | (value << (32u - amount));
 }
@@ -81,8 +81,8 @@ void Sha256::update(const void* data, std::size_t size) {
 Sha256Digest Sha256::finish() {
     const std::uint64_t bitLength = length_ * 8;
 
-    // Append 0x80, pad with zeros up to 56 mod 64, then the 64-bit length. The
-    // largest trailer is 1 + 63 + 8 = 72 bytes.
+    // 0x80을 추가하고 길이가 64로 나눈 나머지 56이 될 때까지 0으로 padding한 뒤,
+    // 64비트 길이를 붙인다. 추가되는 부분은 최대 1 + 63 + 8 = 72바이트이다.
     std::array<std::uint8_t, 72> padding{};
     padding[0] = 0x80;
     const std::size_t zeroCount = (119 - buffered_) % 64;

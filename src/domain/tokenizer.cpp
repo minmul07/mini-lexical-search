@@ -7,10 +7,9 @@ bool isContinuationByte(unsigned char byte) {
     return (byte & 0xC0) == 0x80;
 }
 
-// Decodes one UTF-8 code point starting at text[index]. Returns false for
-// malformed input (overlong encodings, surrogates, code points above U+10FFFF,
-// or truncated sequences); length is then set to 1 so the caller can skip the
-// offending byte and continue.
+// text[index]부터 UTF-8 code point 하나를 디코딩한다. 잘못된 입력(overlong encoding,
+// surrogate, U+10FFFF를 초과하는 code point, 잘린 바이트 시퀀스)이면 false를 반환한다.
+// 이때 length를 1로 설정하여 호출자가 해당 바이트를 건너뛰고 계속 처리할 수 있게 한다.
 bool decodeUtf8(const std::string& text, std::size_t index, char32_t& codePoint,
                 std::size_t& length) {
     const unsigned char first = static_cast<unsigned char>(text[index]);
@@ -58,9 +57,9 @@ bool decodeUtf8(const std::string& text, std::size_t index, char32_t& codePoint,
     return false;
 }
 
-// Only ASCII letters/digits and Hangul code points are token characters.
-// Everything else -- whitespace, punctuation, emoji, BOM, and other scripts --
-// separates tokens and is excluded from the output.
+// ASCII 영문·숫자와 한글 code point만 토큰 문자로 허용한다.
+// 그 밖의 문자(공백, 문장부호, 이모지, BOM, 다른 언어 문자)는
+// 토큰을 구분하고 출력에서 제외한다.
 bool isTokenCodePoint(char32_t codePoint) {
     return (codePoint >= '0' && codePoint <= '9') ||
            (codePoint >= 'A' && codePoint <= 'Z') ||
@@ -95,7 +94,7 @@ std::vector<std::string> SimpleTokenizer::tokenize(const std::string& text) {
             } else if (byte >= 'A' && byte <= 'Z') {
                 token += static_cast<char>(byte - 'A' + 'a');
             } else {
-                // Whitespace, punctuation, and control bytes separate tokens.
+                // 공백, 문장부호, 제어 바이트는 토큰을 구분한다.
                 flushToken(tokens, token);
             }
             ++index;
@@ -105,10 +104,10 @@ std::vector<std::string> SimpleTokenizer::tokenize(const std::string& text) {
         char32_t codePoint = 0;
         std::size_t length = 1;
         if (decodeUtf8(text, index, codePoint, length) && isTokenCodePoint(codePoint)) {
-            // Keep the original bytes so Hangul survives unchanged.
+            // 한글이 변경되지 않도록 원본 바이트를 유지한다.
             token.append(text, index, length);
         } else {
-            // Disallowed or malformed code points separate tokens.
+            // 허용하지 않거나 잘못된 code point는 토큰을 구분한다.
             flushToken(tokens, token);
         }
         index += length;

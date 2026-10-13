@@ -30,8 +30,8 @@ IndexWork prepareIndex(const std::filesystem::path& directory,
             ++work.stats.added;
         } else {
             document.id = old->second->id;
-            // Tokenization follows the same trigger as metadata indexing: only a
-            // changed hash (or title) invalidates and rebuilds the tokens.
+            // 토큰화 조건은 메타데이터 인덱싱과 같다. hash 또는 title이
+            // 변경된 경우에만 기존 토큰을 무효화하고 재구축한다.
             if (document.hash == old->second->hash &&
                 document.title == old->second->title) {
                 document = *old->second;

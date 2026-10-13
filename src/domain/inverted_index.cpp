@@ -56,8 +56,8 @@ void InvertedIndex::removeDocument(DocumentId documentId) {
 }
 
 void InvertedIndex::merge(const InvertedIndex& other) {
-    // Check every term before making changes: a later conflict must not leave
-    // earlier terms partially merged.
+    // 변경 전에 모든 term을 검사한다. 뒤쪽 term에서 충돌이 발생해도
+    // 앞쪽 term이 일부만 병합된 상태로 남아서는 안 된다.
     for (const auto& [term, source] : other.postings_) {
         const auto found = postings_.find(term);
         if (found == postings_.end()) {

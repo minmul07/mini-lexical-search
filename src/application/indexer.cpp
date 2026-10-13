@@ -30,8 +30,8 @@ void commitIndexSnapshot(std::vector<Document> documents,
     try {
         saveIndexSnapshot(documents, snapshot.index, output);
     } catch (...) {
-        // The postings were already rebuilt in memory; restore the last
-        // persisted state so the next `/index` retries from a consistent point.
+        // 메모리의 posting은 이미 재구축되었으므로 마지막 저장 상태로 복구한다.
+        // 다음 `/index`는 일관된 상태에서 다시 시도한다.
         try {
             snapshot = loadIndexSnapshot(output);
         } catch (...) {

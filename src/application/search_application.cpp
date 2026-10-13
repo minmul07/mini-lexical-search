@@ -59,8 +59,8 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
     try {
         notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
     } catch (...) {
-        // The callback can fail after postings were rebuilt but before saving.
-        // Recover just as commitIndexSnapshot does on a failed save.
+        // posting 재구축 후 저장 전에 콜백이 실패할 수 있다.
+        // 저장 실패 시 commitIndexSnapshot과 동일하게 상태를 복구한다.
         try {
             snapshot_ = loadIndexSnapshot(snapshotPath_);
         } catch (...) {
