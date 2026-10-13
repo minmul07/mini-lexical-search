@@ -15,6 +15,8 @@ endif()
 
 add_compile_options(-Wall -Wextra -Wpedantic)
 
+add_subdirectory(third_party/ftxui)
+
 add_library(mini_lexical_search_domain
     src/domain/inverted_index.cpp
     src/domain/query_processor.cpp

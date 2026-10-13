@@ -13,14 +13,14 @@
 
 ## 제출 및 빌드 조건
 
-* FTXUI 소스를 프로젝트 내부에 포함(vendoring)하여 함께 제출한다. 승인 요청에서는 7.x의 `ftxui.hpp`·`ftxui.cpp` amalgamated 배포본을 사용할 계획을 제시했다. 실제 도입 시 정확한 버전과 필요한 배포 파일·라이선스를 확인하고 기록한다.
+* FTXUI 소스를 프로젝트 내부에 포함(vendoring)하여 함께 제출한다. amalgamated 배포본 7.0.3(`f921fad`)을 `third_party/ftxui/`에 두었다. 빌드는 split 파일(`ftxui.hpp`, `ftxui.cpp`)과 `LICENSE`를 사용하며, CMake 타깃 `ftxui`가 pthread와 함께 컴파일한다. 핵심 모듈과 CLI는 이 타깃에 링크하지 않는다.
 * 라이브러리와 직접 작성한 코드를 포함한 최종 제출 용량은 10MB를 초과하지 않아야 한다.
 * Ubuntu 24.04 LTS 64-bit, GNU g++ 및 ISO C++20(`-std=c++20`) 환경에서 별도 패키지 설치나 네트워크 다운로드 없이 `make` 한 번으로 실행 파일을 생성해야 한다.
 * 실행 시 `--no-tui` 옵션으로 FTXUI 화면 없이 CLI에서 핵심 검색 기능을 독립적으로 사용할 수 있어야 한다.
 
 ## 현재 상태와 후속 검증
 
-핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. FTXUI 사용 승인은 완료되었지만 라이브러리 포함, TUI, `--no-tui`, 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
+핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. FTXUI amalgamated 소스는 CMake 타깃으로 포함되었지만 TUI, `--no-tui`, 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
 
 도입 후에는 [테스트 가이드](TESTING.md)의 핵심 기능·CLI 검증에 더해 다음을 확인한다.
 
