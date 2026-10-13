@@ -94,7 +94,6 @@ Top-K 파일을 순차 Scan하여 매칭 줄 추출
 ## 3.2 확장 목표(낮은 우선순위)
 
 * Trie 기반 검색어 자동완성
-* 한국어 형태소 분석
 * TF-IDF / BM25 기반 Ranking
 * Semantic Search
 * Lexical + Semantic Hybrid Search
@@ -337,11 +336,11 @@ P0에서는 `SimpleTokenizer`를 사용하며 규칙은 다음과 같다.
 2| C++에서 자료구조를 배운다
 ```
 
-단순 공백 분리에서는 둘째 줄의 `자료구조를`가 `자료구조`와 다른 토큰이다. 형태소 분석 이후 둘 다 `자료구조`로 색인되면 다음과 같다.
+현재 SimpleTokenizer에서는 둘째 줄의 `자료구조를`가 `자료구조`와 다른 토큰이다. 각 토큰은 별도로 색인된다.
 
 ```text
-termFrequency = 6
-lines = [1, 2]
+자료구조:   termFrequency = 5, lines = [1]
+자료구조를: termFrequency = 1, lines = [2]
 ```
 
 ---
@@ -488,8 +487,8 @@ Line Numbers
 검색 질의 역시 Indexing 시 사용한 것과 동일한 Tokenizer와 Normalizer를 적용한 후 Index를 조회한다. P0의 SimpleTokenizer에도 같은 규칙을 적용한다.
 
 ```text
-문서:   "자료구조를" → Kiwi → "자료구조" → Index
-검색어: "자료구조가" → 동일한 Kiwi / Normalizer → "자료구조" → Index Lookup
+문서:   "자료구조" → SimpleTokenizer → "자료구조" → Index
+검색어: "자료구조" → 동일한 SimpleTokenizer → "자료구조" → Index Lookup
 ```
 
 질의 형태:
@@ -756,7 +755,7 @@ Indexing 과정에서 발견된 Vocabulary를 Trie에 저장한다.
 
 단순 공백 Tokenizer에서는 서로 다른 네 개의 Token이 된다.
 
-따라서 검색 성능 개선을 위해 Tokenizer 계층을 별도로 구성한다. 인터페이스는 7.2와 같다. 한 줄의 텍스트를 받아 토큰 목록만 반환하고, 줄 번호는 파일을 읽는 쪽이 붙인다.
+Tokenizer 계층은 문서와 질의에 동일한 토큰화 규칙을 적용한다. 인터페이스는 7.2와 같다. 한 줄의 텍스트를 받아 토큰 목록만 반환하고, 줄 번호는 파일을 읽는 쪽이 붙인다.
 
 ### SimpleTokenizer
 
@@ -765,35 +764,6 @@ P0에서 사용한다.
 * ASCII 영문·숫자와 한글(완성형·자모)만 토큰으로 유지
 * 그 밖의 문자(공백·특수문자·이모지·BOM·기타 언어)는 토큰을 분리하고 제외
 * 영문 lowercase 변환
-
-### KoreanTokenizer
-
-P1 이후 선택적으로 적용한다.
-
-후보:
-
-* Kiwi C++ 형태소 분석기
-
-형태소 분석을 통해 조사/어미 등의 기능어를 제거하고 의미 있는 형태소를 Index에 저장한다. 분석기에는 한 줄만 넣고, 반환된 토큰마다 그 줄 번호를 붙인다. `termFrequency`는 토큰이 나온 횟수만큼 증가한다.
-
-```text
-12| 자료구조를 공부한다
-
-↓ Kiwi
-
-자료구조 / NNG
-를       / JKO
-공부     / NNG
-하       / VV
-ㄴ다     / EF
-
-↓
-
-줄 12  자료구조
-줄 12  공부
-```
-
-한국어 NLP 구현 자체가 프로젝트의 주요 목표가 되지 않도록 외부 라이브러리를 활용한다.
 
 ---
 
@@ -839,8 +809,6 @@ Line-aware Index 생성
 * AND / OR 검색 (Sorted Posting List Merge)
 * TF-IDF 또는 BM25 Ranking
 * Trie 기반 자동완성
-* 한국어 Tokenization 개선
-* Kiwi 연동 검토
 * Stop Word 처리
 
 ---
@@ -981,11 +949,12 @@ P0 기준 프로젝트 성공 조건:
 * LLM 기반 답변 생성
 * 이미지 / 영상 검색
 * 실시간 인터넷 검색
-* 자체 형태소 분석기 개발
 
 ---
 
 # 19. 예상 기술 스택
+
+과제 제출에서는 FTXUI만 외부 라이브러리로 허용한다. 어승경(2023203068)이 UI 용도로 개인 승인을 받았으며, 검색 핵심 자료구조·알고리즘에는 사용하지 않는다. 다른 절의 Embedding 모델 등 외부 도구 후보는 현재 허용된 구현 범위에 포함되지 않는다. 상세 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 따른다.
 
 ### Core
 
@@ -995,9 +964,9 @@ P0 기준 프로젝트 성공 조건:
 
 ### Optional
 
-* Kiwi — 한국어 형태소 분석
-* EmbeddingGemma — Semantic Search
-* GoogleTest / Catch2 — Unit Test
+* FTXUI — 승인 완료, 도입 예정. 검색어 입력·결과 및 문서 정보 표시·키보드 처리·화면 전환·상태 시각화
+
+핵심 로직과 UI를 분리하고 `--no-tui`로 CLI 실행을 지원할 계획이다. FTXUI 소스를 함께 제출하며 전체 용량 10MB 이하, 채점 환경에서 별도 설치·다운로드 없이 `make` 한 번으로 빌드하는 조건을 충족해야 한다. 현재는 CMake 기반 CLI만 구현되어 있다. 테스트는 외부 테스트 라이브러리 없이 CTest 기반으로 수행한다.
 
 ---
 

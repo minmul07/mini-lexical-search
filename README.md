@@ -55,11 +55,12 @@ ctest --test-dir build --output-on-failure
 
 * [PRD](docs/PRD.md)
 * [개발 환경](docs/DEVELOPMENT.md)
+* [FTXUI 사용 승인 및 적용 범위](docs/FTXUI_APPROVAL.md)
 
 ## 개발 단계
 
 * **P0** — TXT/Markdown 인덱싱, 단일 키워드 검색, TF Ranking, Top-K, 매칭 줄 출력
-* **P1** — AND/OR 검색, TF-IDF/BM25, Trie 자동완성, 한국어 형태소 분석(Kiwi)
+* **P1** — AND/OR 검색, TF-IDF/BM25, Trie 자동완성
 * **P2** — Hybrid / ANN Search / PDF 인덱싱
 * **P3** — Semantic Search (Embedding)
 

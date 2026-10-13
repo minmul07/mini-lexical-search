@@ -22,12 +22,20 @@ sudo apt install cmake
 
 ## 빌드
 
+현재 개발 빌드는 CMake를 사용한다. 제출용 `make` 단일 명령 빌드는 아직 구현되지 않았다.
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
 ```
 
 Release 빌드는 `-DCMAKE_BUILD_TYPE=Release`로 지정한다.
+
+## 외부 라이브러리 사용 조건
+
+FTXUI는 UI 용도로 사용 승인을 받았다. 검색어 입력·결과 표시·키보드 처리·화면 전환·상태 시각화에만 사용하며, 핵심 자료구조와 검색 알고리즘은 STL과 직접 작성한 코드로 구현한다. FTXUI 이외의 외부 라이브러리는 사용하지 않는다.
+
+FTXUI 소스를 함께 제출하고 전체 제출 용량을 10MB 이하로 유지해야 한다. 채점 환경은 Ubuntu 24.04 LTS 64-bit / GNU g++ / C++20이며, 별도 설치·다운로드 없이 `make` 한 번으로 빌드해야 한다. TUI와 핵심 로직을 분리하고 `--no-tui` CLI 실행 경로를 제공할 계획이다. FTXUI와 해당 옵션은 아직 도입되지 않았다. 상세 승인 기록과 검증 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 참고한다.
 
 ## 실행
 
