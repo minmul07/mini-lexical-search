@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/domain/query_processor.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
 #include "mini_lexical_search/infrastructure/matching_lines.hpp"
@@ -23,11 +24,14 @@ std::int64_t elapsedMilliseconds(Clock::time_point start) {
 
 SearchApplication::SearchApplication(std::filesystem::path snapshotPath)
     : snapshotPath_(std::move(snapshotPath)) {
+    workingJob().set("Loading index");
     try {
         snapshot_ = loadIndexSnapshot(snapshotPath_);
+        workingJob().set("Ready");
     } catch (const std::exception& error) {
         ready_ = false;
         loadError_ = error.what();
+        workingJob().set("Failed to load index");
     }
 }
 
@@ -44,34 +48,45 @@ void SearchApplication::requireReady() const {
 IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
                                       const IndexProgressCallback& progress) {
     requireReady();
-    const auto notify = [&](const IndexProgress& event) {
-        if (progress) progress(event);
-    };
-    notify({IndexStage::MetadataStarted, 0, {}, {}});
-    const auto metadataStarted = Clock::now();
-    auto work = prepareIndex(directory, snapshot_.documents);
-    notify({IndexStage::MetadataCompleted, elapsedMilliseconds(metadataStarted), work.stats, {}});
-
-    notify({IndexStage::TokenizationStarted, 0, {}, {}});
-    const auto tokenizeStarted = Clock::now();
-    const auto tokens = applyIndexWork(work, snapshot_.index, tokenizer_);
-    const auto tokenizeElapsed = work.toTokenize.empty() ? 0 : elapsedMilliseconds(tokenizeStarted);
     try {
-        notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
-    } catch (...) {
-        // posting 재구축 후 저장 전에 콜백이 실패할 수 있다.
-        // 저장 실패 시 commitIndexSnapshot과 동일하게 상태를 복구한다.
+        const auto notify = [&](const IndexProgress& event) {
+            if (event.stage == IndexStage::MetadataStarted) {
+                workingJob().set("updating index...");
+            } else if (event.stage == IndexStage::TokenizationStarted) {
+                workingJob().set("Tokenizing..");
+            }
+            if (progress) progress(event);
+        };
+        notify({IndexStage::MetadataStarted, 0, {}, {}});
+        const auto metadataStarted = Clock::now();
+        auto work = prepareIndex(directory, snapshot_.documents);
+        notify({IndexStage::MetadataCompleted, elapsedMilliseconds(metadataStarted), work.stats, {}});
+
+        notify({IndexStage::TokenizationStarted, 0, {}, {}});
+        const auto tokenizeStarted = Clock::now();
+        const auto tokens = applyIndexWork(work, snapshot_.index, tokenizer_);
+        const auto tokenizeElapsed = work.toTokenize.empty() ? 0 : elapsedMilliseconds(tokenizeStarted);
         try {
-            snapshot_ = loadIndexSnapshot(snapshotPath_);
+            notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
         } catch (...) {
-            snapshot_ = IndexSnapshot{};
+            // posting 재구축 후 저장 전에 콜백이 실패할 수 있다.
+            // 저장 실패 시 commitIndexSnapshot과 동일하게 상태를 복구한다.
+            try {
+                snapshot_ = loadIndexSnapshot(snapshotPath_);
+            } catch (...) {
+                snapshot_ = IndexSnapshot{};
+            }
+            throw;
         }
+        if (work.changed) {
+            commitIndexSnapshot(std::move(work.documents), snapshot_, snapshotPath_);
+        }
+        workingJob().set("Ready");
+        return {work.stats, tokens};
+    } catch (...) {
+        workingJob().set("Failed to update index");
         throw;
     }
-    if (work.changed) {
-        commitIndexSnapshot(std::move(work.documents), snapshot_, snapshotPath_);
-    }
-    return {work.stats, tokens};
 }
 
 std::vector<SearchResult> SearchApplication::search(const std::string& text,

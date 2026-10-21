@@ -1,4 +1,5 @@
 #include "mini_lexical_search/application/search_application.hpp"
+#include "mini_lexical_search/application/working_job.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -55,12 +56,14 @@ void testSession(const fs::path& root) {
     write(documents / "b.txt", "beta\nalpha\n자료구조\n");
     SearchApplication app(snapshot);
     require(app.ready() && app.loadError().empty(), "missing snapshot must start ready");
+    require(workingJob().label() == "Ready", "missing snapshot must be ready");
     require(app.snapshotPath() == snapshot && app.search("alpha").empty(), "empty session failed");
 
     std::vector<IndexProgress> events;
     auto collect = [&](const IndexProgress& event) { events.push_back(event); };
     const auto update = app.index(documents, collect);
     requireStages(events);
+    require(workingJob().label() == "Ready", "successful indexing must be ready");
     require(update.metadata.added == 2 && update.tokens.documents == 2 && update.tokens.tokens == 9,
             "wrong indexing counters");
     require(events[1].metadata.added == 2 && events[3].tokens.tokens == 9, "event counters missing");
@@ -157,6 +160,7 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     write(corrupt, "{broken");
     SearchApplication broken(corrupt);
     require(!broken.ready() && !broken.loadError().empty(), "corrupt snapshot accepted");
+    require(workingJob().label() == "Failed to load index", "corrupt snapshot must fail the job");
     requireFailure([&] { broken.search("alpha"); }, "search on corrupt session accepted");
     std::vector<IndexProgress> events;
     requireFailure([&] { broken.index(root, [&](const IndexProgress& e) { events.push_back(e); }); },

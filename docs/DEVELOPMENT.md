@@ -44,7 +44,7 @@ FTXUI 소스를 함께 제출하고 전체 제출 용량을 10MB 이하로 유�
 ./build/mini_lexical_search start --no-tui
 ```
 
-`start`는 기본적으로 TUI를 연다. 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두며, 입력이 상자 너비를 넘으면 줄이 늘어난다. Enter는 CLI와 같은 명령을 실행하고 상자를 비운다. 출력은 상자 아래, 상자 내용 너비를 넘지 않게 줄바꿈되어 나타나고 다음 명령이 교체한다. 화면 높이를 넘는 출력은 그대로 둔다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. `--no-tui`는 같은 명령의 줄 단위 REPL이다.
+`start`는 기본적으로 TUI를 연다. 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두며, 입력이 상자 너비를 넘으면 줄이 늘어난다. Enter는 CLI와 같은 명령을 실행하고 상자를 비운다. 출력은 상자 아래, 상자 내용 너비를 넘지 않게 줄바꿈되어 나타나고 다음 명령이 교체한다. 화면 높이를 넘는 출력은 그대로 둔다. 우측 상단에는 전역 `workingJob` 라벨을 단순 텍스트로 표시한다. 로드 성공은 `Ready`, 실패는 `Failed to load index`다. 인덱싱 중에는 `updating index...`와 `Tokenizing..`을 기록하고, 성공하면 `Ready`, 실패하면 `Failed to update index`가 된다. 화면은 프레임이 그려질 때의 라벨을 보여 준다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. `--no-tui`는 같은 명령의 줄 단위 REPL이다.
 
 ```text
 $ ./build/mini_lexical_search start --no-tui
@@ -122,7 +122,7 @@ CLI → Application → Infrastructure → Domain 방향으로 연결하며 Appl
 * 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, Document 수집·SHA-256 해시·JSON 저장, SimpleTokenizer 기반 토큰화와 `tokenCount`, 변경 문서 토큰화 게이트, `unordered_map` 기반 Inverted Index, `.data/index.json` 스냅샷 저장·로드, CTest 테스트
 * 완료: 단일 키워드·AND/OR Query Processing, TF 합산 점수, 모든 매칭 문서·행 출력
 * 완료: 계층 분리, UI 독립적인 `SearchApplication` 인덱싱·검색 API와 진행 이벤트
-* 완료: `start` 기본 TUI(중앙 입력 상자, Enter로 CLI와 같은 명령 실행, 상자 아래 출력)와 `--no-tui` CLI 경로
+* 완료: `start` 기본 TUI(중앙 입력 상자, Enter로 CLI와 같은 명령 실행, 상자 아래 출력, 우측 상단 `workingJob` 텍스트)와 `--no-tui` CLI 경로
 * 미구현: Ranking 정렬, Top-K, 화면을 넘는 TUI 출력 처리, 검색 결과 전용 화면
 
 검색은 시작 시 로드한 스냅샷 또는 `/index`로 갱신한 메모리 인덱스를 조회하며 스냅샷 로드 실패 시 거부한다. `src/domain/query_processor.cpp`는 동일한 Tokenizer를 사용하는 질의 파싱과 정렬된 Posting List의 교집합·합집합을 담당한다. 반복 term은 한 번만 계산한다. 혼합 AND/OR, 괄호, 따옴표, 암묵적 연산자는 지원하지 않는다. `src/infrastructure/matching_lines.cpp`는 매칭 문서만 한 번씩 순차적으로 읽으며 기본 한도 `0`은 전체 매칭 행, 양수 한도는 문서당 앞 N개 행이다. 현재 CLI는 `0`을 사용한다. 파일 읽기 실패나 기록된 줄 부재는 문서별 경고로 처리한다. 인덱싱 후 원문 변경은 자동 검증하지 않으므로 `/index`로 갱신해야 한다.

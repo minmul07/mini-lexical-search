@@ -1,6 +1,7 @@
 #include "mini_lexical_search/presentation/tui/tui.hpp"
 
 #include "mini_lexical_search/presentation/cli/cli.hpp"
+#include "mini_lexical_search/application/working_job.hpp"
 
 #include <algorithm>
 #include <sstream>
@@ -211,7 +212,14 @@ void run(const char* program, SearchApplication& application) {
             column.push_back(ftxui::text(wrapped) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width) |
                              ftxui::hcenter);
         }
-        return ftxui::vbox(std::move(column)) | ftxui::center;
+        auto status = ftxui::vbox({
+            ftxui::text(workingJob().label()) | ftxui::align_right,
+            ftxui::filler(),
+        });
+        return ftxui::dbox({
+            ftxui::vbox(std::move(column)) | ftxui::center,
+            std::move(status),
+        });
     });
     component |= ftxui::CatchEvent([&](ftxui::Event event) {
         if (event == ftxui::Event::Escape) {
