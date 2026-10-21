@@ -3,16 +3,16 @@
 
 #include <exception>
 #include <iostream>
+#include <ostream>
 #include <sstream>
 #include <string>
 
 namespace mini_lexical_search::cli {
 namespace {
 constexpr std::size_t kMaxMatchingLines = 0;
-}  // namespace
 
-void printUsage(const char* program) {
-    std::cout
+void writeUsage(std::ostream& output, const char* program) {
+    output
         << "Mini Lexical Search " << mini_lexical_search::versionString() << "\n\n"
         << "사용법:\n"
         << "  " << program << " start\n"
@@ -29,107 +29,122 @@ void printUsage(const char* program) {
         << "  /exit | /quit      프로그램 종료\n";
 }
 
+}  // namespace
+
+void printUsage(const char* program) {
+    writeUsage(std::cout, program);
+}
+
+LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
+                      std::ostream& output) {
+    std::istringstream input{std::string(line)};
+    std::string command;
+    if (!(input >> command)) {
+        return LineAction::Ignored;
+    }
+    std::string arguments;
+    std::getline(input >> std::ws, arguments);
+    const auto last = arguments.find_last_not_of(" \t\r");
+    if (last != std::string::npos) {
+        arguments.erase(last + 1);
+    }
+
+    if (command == "/index") {
+        if (!application.ready()) {
+            output << "error: index snapshot is not loaded; fix or remove "
+                   << application.snapshotPath().string() << "\n";
+            return LineAction::Ran;
+        }
+        try {
+            const auto directory = arguments.empty() ? "./documents" : arguments;
+            application.index(directory, [&output](const IndexProgress& event) {
+                switch (event.stage) {
+                case IndexStage::MetadataStarted:
+                    output << "updating file metadata..\n" << std::flush;
+                    break;
+                case IndexStage::MetadataCompleted:
+                    output << "updated file metadata (" << event.elapsedMilliseconds << " ms)\n";
+                    output << event.metadata.notUpdated << " not updated, " << event.metadata.updated
+                           << " updated, " << event.metadata.added << " added, "
+                           << event.metadata.deleted << " deleted\n";
+                    break;
+                case IndexStage::TokenizationStarted:
+                    output << "tokenizing documents..\n" << std::flush;
+                    break;
+                case IndexStage::TokenizationCompleted:
+                    output << "tokenized " << event.tokens.documents << " documents ("
+                           << event.elapsedMilliseconds << " ms)\n";
+                    break;
+                }
+            });
+        } catch (const std::exception& error) {
+            output << "error: indexing failed: " << error.what() << "\n";
+        }
+        return LineAction::Ran;
+    }
+
+    if (command == "/search") {
+        if (arguments.empty()) {
+            output << "Usage: /search <query>\n";
+        } else if (!application.ready()) {
+            output << "error: index snapshot is not loaded; fix or remove "
+                   << application.snapshotPath().string() << "\n";
+        } else {
+            try {
+                const auto results = application.search(arguments, kMaxMatchingLines);
+                if (results.empty()) output << "No matches.\n";
+                for (std::size_t i = 0; i < results.size(); ++i) {
+                    const auto& result = results[i];
+                    output << i + 1 << ". " << result.document.title << " (" << result.document.path
+                           << ")    score: " << result.score << "\n";
+                    if (!result.warning.empty()) {
+                        output << "   warning: " << result.warning << "\n";
+                        continue;
+                    }
+                    for (const auto& match : result.lines) {
+                        output << "   " << match.number << ": " << match.text << "\n";
+                    }
+                    if (result.lines.size() < result.totalMatchingLines) {
+                        output << "   + " << result.totalMatchingLines - result.lines.size()
+                               << " more matches\n";
+                    }
+                }
+            } catch (const std::exception& error) {
+                output << "error: search failed: " << error.what()
+                       << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
+            }
+        }
+        return LineAction::Ran;
+    }
+    if (command == "/help" || command == "/exit" || command == "/quit") {
+        if (!arguments.empty()) {
+            output << "error: unexpected arguments for " << command << "\n";
+            return LineAction::Ran;
+        }
+        if (command == "/exit" || command == "/quit") {
+            return LineAction::Quit;
+        }
+        writeUsage(output, program);
+        return LineAction::Ran;
+    }
+    output << "Unknown command: " << line << "\n";
+    return LineAction::Ran;
+}
+
 void runRepl(const char* program, SearchApplication& application) {
     std::cout << "Mini Lexical Search started.\n"
               << "Type '/help' for commands, '/exit' to quit.\n";
 
     if (!application.ready()) {
-        std::cout << "error: cannot load " << application.snapshotPath().string() << ": " << application.loadError() << "\n";
+        std::cout << "error: cannot load " << application.snapshotPath().string() << ": "
+                  << application.loadError() << "\n";
     }
 
     std::string line;
     while (std::cout << "> " && std::getline(std::cin, line)) {
-        std::istringstream input(line);
-        std::string command;
-        if (!(input >> command)) {
-            continue;
+        if (handleLine(program, application, line, std::cout) == LineAction::Quit) {
+            break;
         }
-        std::string arguments;
-        std::getline(input >> std::ws, arguments);
-        const auto last = arguments.find_last_not_of(" \t\r");
-        if (last != std::string::npos) {
-            arguments.erase(last + 1);
-        }
-
-        if (command == "/index") {
-            if (!application.ready()) {
-                std::cout << "error: index snapshot is not loaded; fix or remove "
-                          << application.snapshotPath().string() << "\n";
-                continue;
-            }
-            try {
-                const auto directory = arguments.empty() ? "./documents" : arguments;
-                application.index(directory, [](const IndexProgress& event) {
-                    switch (event.stage) {
-                    case IndexStage::MetadataStarted:
-                        std::cout << "updating file metadata..\n" << std::flush;
-                        break;
-                    case IndexStage::MetadataCompleted:
-                        std::cout << "updated file metadata (" << event.elapsedMilliseconds << " ms)\n";
-                        std::cout << event.metadata.notUpdated << " not updated, " << event.metadata.updated
-                                  << " updated, " << event.metadata.added << " added, "
-                                  << event.metadata.deleted << " deleted\n";
-                        break;
-                    case IndexStage::TokenizationStarted:
-                        std::cout << "tokenizing documents..\n" << std::flush;
-                        break;
-                    case IndexStage::TokenizationCompleted:
-                        std::cout << "tokenized " << event.tokens.documents << " documents ("
-                                  << event.elapsedMilliseconds << " ms)\n";
-                        break;
-                    }
-                });
-            } catch (const std::exception& error) {
-                std::cout << "error: indexing failed: " << error.what() << "\n";
-            }
-            continue;
-        }
-
-        if (command == "/search") {
-            if (arguments.empty()) {
-                std::cout << "Usage: /search <query>\n";
-            } else if (!application.ready()) {
-                std::cout << "error: index snapshot is not loaded; fix or remove " << application.snapshotPath().string() << "\n";
-            } else {
-                try {
-                    const auto results = application.search(arguments, kMaxMatchingLines);
-                    if (results.empty()) std::cout << "No matches.\n";
-                    for (std::size_t i = 0; i < results.size(); ++i) {
-                        const auto& result = results[i];
-                        std::cout << i + 1 << ". " << result.document.title << " (" << result.document.path
-                                  << ")    score: " << result.score << "\n";
-                        if (!result.warning.empty()) {
-                            std::cout << "   warning: " << result.warning << "\n";
-                            continue;
-                        }
-                        for (const auto& match : result.lines) {
-                            std::cout << "   " << match.number << ": " << match.text << "\n";
-                        }
-                        if (result.lines.size() < result.totalMatchingLines) {
-                            std::cout << "   + " << result.totalMatchingLines - result.lines.size()
-                                      << " more matches\n";
-                        }
-                    }
-                } catch (const std::exception& error) {
-                    std::cout << "error: search failed: " << error.what()
-                              << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
-                }
-            }
-            continue;
-        }
-        if (command == "/help" ||
-            command == "/exit" || command == "/quit") {
-            if (!arguments.empty()) {
-                std::cout << "error: unexpected arguments for " << command << "\n";
-                continue;
-            }
-            if (command == "/exit" || command == "/quit") {
-                break;
-            }
-            printUsage(program);
-            continue;
-        }
-        std::cout << "Unknown command: " << line << "\n";
     }
 }
 

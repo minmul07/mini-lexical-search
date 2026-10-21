@@ -58,7 +58,7 @@ add_library(mini_lexical_search_tui
 target_include_directories(mini_lexical_search_tui
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(mini_lexical_search_tui
-    PRIVATE ftxui)
+    PRIVATE ftxui mini_lexical_search_cli)
 
 add_executable(mini_lexical_search src/main.cpp)
 target_link_libraries(mini_lexical_search PRIVATE mini_lexical_search_cli mini_lexical_search_tui)

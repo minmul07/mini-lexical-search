@@ -41,12 +41,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    mini_lexical_search::SearchApplication application(".data/index.json");
     if (noTui) {
-        mini_lexical_search::SearchApplication application(".data/index.json");
         mini_lexical_search::cli::runRepl(argv[0], application);
         return 0;
     }
 
-    mini_lexical_search::tui::run();
+    mini_lexical_search::tui::run(argv[0], application);
     return 0;
 }
