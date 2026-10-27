@@ -44,7 +44,7 @@ FTXUI 소스를 함께 제출하고 전체 제출 용량을 10MB 이하로 유�
 ./build/mini_lexical_search start --no-tui
 ```
 
-`start`는 기본적으로 TUI를 연다. 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두며, 입력이 상자 너비를 넘으면 줄이 늘어난다. Enter는 CLI와 같은 명령을 실행하고 상자를 비운다. 출력은 상자 아래, 상자 내용 너비를 넘지 않게 줄바꿈되어 나타나고 다음 명령이 교체한다. 화면 높이를 넘는 출력은 그대로 둔다. 우측 상단에는 전역 `workingJob` 라벨을 단순 텍스트로 표시한다. 로드 성공은 `Ready`, 실패는 `Failed to load index`다. 인덱싱 중에는 `updating index...`와 `Tokenizing..`을 기록하고, 성공하면 `Ready`, 실패하면 `Failed to update index`가 된다. 화면은 프레임이 그려질 때의 라벨을 보여 준다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. `--no-tui`는 같은 명령의 줄 단위 REPL이다.
+`start`는 기본적으로 TUI를 연다. 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두며, 입력이 상자 너비를 넘으면 줄이 늘어난다. Enter는 CLI와 같은 명령을 실행하고 상자를 비운다. 출력은 상자 아래, 상자 내용 너비를 넘지 않게 줄바꿈되어 나타나고 다음 명령이 교체한다. 화면 높이를 넘는 출력은 그대로 둔다. 우측 상단에는 전역 `workingJob` 라벨을 단순 텍스트로 표시한다. 로드 성공은 `Ready`, 실패는 `Failed to load index`다. 손상된 스냅샷이면 CLI는 `Failed to load the index. Recreate the index? (Y/n)`를 묻고, `Y`·`y`·Enter는 `./documents`로 다시 만들며 `n`은 파일을 유지한 채 종료한다. TUI는 입력 상자 전에 `reset index`와 `quit` 팝업을 연다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다. 인덱싱 중에는 `updating index...`와 `Tokenizing..`을 기록하고, 성공하면 `Ready`, 실패하면 `Failed to update index`가 된다. 화면은 프레임이 그려질 때의 라벨을 보여 준다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. `--no-tui`는 같은 명령의 줄 단위 REPL이다.
 
 ```text
 $ ./build/mini_lexical_search start --no-tui
@@ -74,7 +74,7 @@ No matches.
 * `/help` — 도움말
 * `/exit`, `/quit` — 종료
 
-명령은 표준 입력으로 한 줄씩 전달한다. 빈 줄은 무시하며, 알 수 없는 명령이나 잘못된 인자는 오류를 출력한 뒤 다음 입력을 받는다. 입력 종료(EOF) 시에도 정상 종료한다. 문서 디렉터리는 실행 인자 대신 `/index`의 인자로 지정한다. 명령 뒤 나머지 문자열 전체를 경로로 해석하므로 공백이 포함된 경로도 따옴표 없이 입력한다. 경로 양 끝의 공백은 제거한다. 앱은 시작할 때 `.data/index.json` 스냅샷을 메모리에 로드하며, 로드에 실패하면 `error: cannot load ...`를 출력하고 `/index`는 그 실행에서 갱신을 거부한다. `/index`는 시작 시 `updating file metadata..`, 성공 시 `updated file metadata (<시간> ms)`와 변경 집계를 출력하고, 이어서 `tokenizing documents..`와 `tokenized <문서 수> documents (<시간> ms)`를 출력한다. 메타데이터 시간은 문서 수집·해시 계산·기존 스냅샷 문서 테이블과의 비교를 포함한 경과 시간이고, 토큰화 시간은 변경된 문서를 읽어 토큰화하고 Posting을 다시 만든 경과 시간이다. 둘 다 정수 밀리초로 표시한다. 변경 없는 문서는 토큰화하지 않으며 `tokenized 0 documents (0 ms)`로 표시된다. 실패 시 `error: indexing failed: <원인>`을 출력하고 앱은 계속 실행된다. 메타데이터 준비 단계에서 실패하면 완료 메시지 없이 오류만 출력하며, 이후 단계(토큰화·저장)에서 실패하면 그 단계 이후의 완료 메시지만 생략된다.
+명령은 표준 입력으로 한 줄씩 전달한다. 빈 줄은 무시하며, 알 수 없는 명령이나 잘못된 인자는 오류를 출력한 뒤 다음 입력을 받는다. 입력 종료(EOF) 시에도 정상 종료한다. 문서 디렉터리는 실행 인자 대신 `/index`의 인자로 지정한다. 명령 뒤 나머지 문자열 전체를 경로로 해석하므로 공백이 포함된 경로도 따옴표 없이 입력한다. 경로 양 끝의 공백은 제거한다. 앱은 시작할 때 `.data/index.json` 스냅샷을 메모리에 로드한다. 파일이 없으면 빈 인덱스로 시작한다. 손상되면 CLI는 다시 만들지 묻고, 거절하거나 재생성이 실패하면 파일을 유지한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부한다. `/index`는 시작 시 `updating file metadata..`, 성공 시 `updated file metadata (<시간> ms)`와 변경 집계를 출력하고, 이어서 `tokenizing documents..`와 `tokenized <문서 수> documents (<시간> ms)`를 출력한다. 메타데이터 시간은 문서 수집·해시 계산·기존 스냅샷 문서 테이블과의 비교를 포함한 경과 시간이고, 토큰화 시간은 변경된 문서를 읽어 토큰화하고 Posting을 다시 만든 경과 시간이다. 둘 다 정수 밀리초로 표시한다. 변경 없는 문서는 토큰화하지 않으며 `tokenized 0 documents (0 ms)`로 표시된다. 실패 시 `error: indexing failed: <원인>`을 출력하고 앱은 계속 실행된다. 메타데이터 준비 단계에서 실패하면 완료 메시지 없이 오류만 출력하며, 이후 단계(토큰화·저장)에서 실패하면 그 단계 이후의 완료 메시지만 생략된다.
 
 ## 테스트
 

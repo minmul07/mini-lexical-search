@@ -89,6 +89,40 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
     }
 }
 
+IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directory,
+                                            const IndexProgressCallback& progress) {
+    IndexSnapshot rebuilt;
+    try {
+        const auto notify = [&](const IndexProgress& event) {
+            if (event.stage == IndexStage::MetadataStarted) {
+                workingJob().set("updating index...");
+            } else if (event.stage == IndexStage::TokenizationStarted) {
+                workingJob().set("Tokenizing..");
+            }
+            if (progress) progress(event);
+        };
+        notify({IndexStage::MetadataStarted, 0, {}, {}});
+        const auto metadataStarted = Clock::now();
+        auto work = prepareIndex(directory, std::vector<Document>{});
+        notify({IndexStage::MetadataCompleted, elapsedMilliseconds(metadataStarted), work.stats, {}});
+
+        notify({IndexStage::TokenizationStarted, 0, {}, {}});
+        const auto tokenizeStarted = Clock::now();
+        const auto tokens = applyIndexWork(work, rebuilt.index, tokenizer_);
+        const auto tokenizeElapsed = work.toTokenize.empty() ? 0 : elapsedMilliseconds(tokenizeStarted);
+        notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
+        commitIndexSnapshot(std::move(work.documents), rebuilt, snapshotPath_);
+        snapshot_ = std::move(rebuilt);
+        ready_ = true;
+        loadError_.clear();
+        workingJob().set("Ready");
+        return {work.stats, tokens};
+    } catch (...) {
+        workingJob().set("Failed to load index");
+        throw;
+    }
+}
+
 std::vector<SearchResult> SearchApplication::search(const std::string& text,
                                                     std::size_t maxMatchingLines) {
     requireReady();

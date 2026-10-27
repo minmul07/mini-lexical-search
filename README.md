@@ -57,6 +57,7 @@ ctest --test-dir build --output-on-failure
 * [PRD](docs/PRD.md)
 * [개발 환경](docs/DEVELOPMENT.md)
 * [FTXUI 사용 승인 및 적용 범위](docs/FTXUI_APPROVAL.md)
+* [TUI 디자인](docs/TUI_DESIGN.md)
 
 ## 개발 단계
 

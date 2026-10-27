@@ -168,6 +168,20 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     require(events.empty() && read(corrupt) == "{broken", "corrupt snapshot overwritten");
 
     const auto documents = root / "documents";
+    fs::create_directories(documents);
+    write(documents / "a.txt", "alpha\n");
+    fs::create_directory(corrupt.string() + ".tmp");
+    requireFailure([&] { broken.rebuildIndex(documents); }, "blocked rebuild accepted");
+    require(!broken.ready() && workingJob().label() == "Failed to load index",
+            "failed rebuild became ready");
+    require(read(corrupt) == "{broken", "failed rebuild overwrote the snapshot");
+    fs::remove(corrupt.string() + ".tmp");
+    const auto rebuilt = broken.rebuildIndex(documents);
+    require(broken.ready() && workingJob().label() == "Ready" && rebuilt.metadata.added == 1 &&
+                broken.search("alpha").size() == 1,
+            "rebuild did not replace the damaged snapshot");
+    require(read(corrupt) != "{broken", "rebuild kept the damaged text");
+
     fs::create_directory(documents);
     write(documents / "a.txt", "alpha\n");
     const auto snapshot = root / "new.json";

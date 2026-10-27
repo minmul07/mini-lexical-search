@@ -16,6 +16,6 @@ enum class LineAction {
 void printUsage(const char* program);
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
                       std::ostream& output);
-void runRepl(const char* program, SearchApplication& application);
+int runRepl(const char* program, SearchApplication& application);
 
 }  // namespace mini_lexical_search::cli

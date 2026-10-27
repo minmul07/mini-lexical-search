@@ -43,8 +43,7 @@ int main(int argc, char* argv[]) {
 
     mini_lexical_search::SearchApplication application(".data/index.json");
     if (noTui) {
-        mini_lexical_search::cli::runRepl(argv[0], application);
-        return 0;
+        return mini_lexical_search::cli::runRepl(argv[0], application);
     }
 
     mini_lexical_search::tui::run(argv[0], application);

@@ -53,6 +53,11 @@ public:
     IndexUpdate index(const std::filesystem::path& directory,
                       const IndexProgressCallback& progress = {});
 
+    // 로드에 실패한 스냅샷을 빈 문서 목록에서 다시 만든다.
+    // 저장이 성공한 뒤에만 ready 상태가 된다. 실패하면 기존 파일과 미준비 상태를 유지한다.
+    IndexUpdate rebuildIndex(const std::filesystem::path& directory,
+                             const IndexProgressCallback& progress = {});
+
     // 문서 ID순으로 결과를 반환한다. 한도가 0이면 모든 매칭 줄을 포함한다.
     // 초기 로드 실패 또는 잘못된 질의 시 예외를 던진다. snapshot을 저장하지 않는다.
     std::vector<SearchResult> search(const std::string& query,

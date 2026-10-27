@@ -4,6 +4,7 @@
 #include "mini_lexical_search/application/working_job.hpp"
 
 #include <algorithm>
+#include <exception>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -181,10 +182,12 @@ void run(const char* program, SearchApplication& application) {
     std::string content;
     int cursor = 0;
     std::string output;
-    if (!application.ready()) {
-        output = "error: cannot load " + application.snapshotPath().string() + ": " +
-                 application.loadError() + "\n";
-    }
+    bool showPrompt = !application.ready();
+    std::string promptError;
+    bool mouseMode = false;
+    int mouseIndex = -1;
+    ftxui::Box resetBox;
+    ftxui::Box quitBox;
 
     ftxui::InputOption option;
     option.multiline = true;
@@ -200,7 +203,78 @@ void run(const char* program, SearchApplication& application) {
     };
 
     auto input = ftxui::Input(&content, option);
+    ftxui::ButtonOption action;
+    action.transform = [](const ftxui::EntryState& state) { return ftxui::text(state.label); };
+    auto resetIndex = ftxui::Button(
+        "reset index",
+        [&] {
+            try {
+                application.rebuildIndex("./documents");
+                promptError.clear();
+                showPrompt = false;
+            } catch (const std::exception& error) {
+                promptError = error.what();
+            }
+        },
+        action);
+    auto quit = ftxui::Button("quit", [&] { screen.Exit(); }, action);
+    auto choices = ftxui::Container::Horizontal({resetIndex, quit});
+    auto paintChoice = [&](ftxui::Component choice, int index, ftxui::Box& box) {
+        auto element = choice->Render() | ftxui::reflect(box);
+        const bool highlighted = mouseMode ? mouseIndex == index : choice->Focused();
+        if (highlighted) {
+            element |= ftxui::inverted;
+        }
+        return element;
+    };
+    auto prompt = ftxui::Renderer(choices, [&] {
+        ftxui::Elements message{ftxui::text("Recreate the index?")};
+        if (!promptError.empty()) {
+            message.push_back(ftxui::text(promptError));
+        }
+        auto dialog = ftxui::vbox({
+            ftxui::text("Failed to load index") | ftxui::bold,
+            ftxui::text(""),
+            ftxui::vbox(std::move(message)),
+            ftxui::text(""),
+            ftxui::hbox({
+                ftxui::filler(),
+                paintChoice(resetIndex, 0, resetBox),
+                ftxui::text("  "),
+                paintChoice(quit, 1, quitBox),
+            }),
+        });
+        return ftxui::hbox({
+                   ftxui::text(" "),
+                   ftxui::vbox({ftxui::text(""), std::move(dialog), ftxui::text("")}),
+                   ftxui::text(" "),
+               }) |
+               ftxui::size(ftxui::WIDTH, ftxui::GREATER_THAN, 52) | ftxui::border;
+    });
+    prompt |= ftxui::CatchEvent([&](ftxui::Event event) {
+        if (event.is_mouse()) {
+            if (event.mouse().motion == ftxui::Mouse::Moved) {
+                mouseMode = true;
+                if (resetBox.Contain(event.mouse().x, event.mouse().y)) {
+                    mouseIndex = 0;
+                } else if (quitBox.Contain(event.mouse().x, event.mouse().y)) {
+                    mouseIndex = 1;
+                } else {
+                    mouseIndex = -1;
+                }
+            }
+            return false;
+        }
+        if (mouseMode && mouseIndex >= 0) {
+            (mouseIndex == 0 ? resetIndex : quit)->TakeFocus();
+        }
+        mouseMode = false;
+        return false;
+    });
     auto component = ftxui::Renderer(input, [&] {
+        if (showPrompt) {
+            return ftxui::filler();
+        }
         const int width = wrapWidthFor(screen);
         reflow(content, cursor, width);
         auto field = input->Render() | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width) |
@@ -241,7 +315,8 @@ void run(const char* program, SearchApplication& application) {
         }
         return false;
     });
-    screen.Loop(component);
+    auto root = ftxui::Modal(component, prompt, &showPrompt);
+    screen.Loop(root);
 }
 
 }  // namespace mini_lexical_search::tui

@@ -11,6 +11,56 @@ namespace mini_lexical_search::cli {
 namespace {
 constexpr std::size_t kMaxMatchingLines = 0;
 
+void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
+    switch (event.stage) {
+    case IndexStage::MetadataStarted:
+        output << "updating file metadata..\n" << std::flush;
+        break;
+    case IndexStage::MetadataCompleted:
+        output << "updated file metadata (" << event.elapsedMilliseconds << " ms)\n";
+        output << event.metadata.notUpdated << " not updated, " << event.metadata.updated
+               << " updated, " << event.metadata.added << " added, "
+               << event.metadata.deleted << " deleted\n";
+        break;
+    case IndexStage::TokenizationStarted:
+        output << "tokenizing documents..\n" << std::flush;
+        break;
+    case IndexStage::TokenizationCompleted:
+        output << "tokenized " << event.tokens.documents << " documents ("
+               << event.elapsedMilliseconds << " ms)\n";
+        break;
+    }
+}
+
+enum class RebuildChoice { Ready, Declined, Failed };
+
+RebuildChoice recreateIndex(SearchApplication& application) {
+    while (true) {
+        std::cout << "Failed to load the index. Recreate the index? (Y/n) " << std::flush;
+        std::string answer;
+        if (!std::getline(std::cin, answer)) {
+            return RebuildChoice::Declined;
+        }
+        if (!answer.empty() && answer.back() == '\r') {
+            answer.pop_back();
+        }
+        if (answer.empty() || answer == "Y" || answer == "y") {
+            try {
+                application.rebuildIndex("./documents", [](const IndexProgress& event) {
+                    writeIndexProgress(std::cout, event);
+                });
+                return RebuildChoice::Ready;
+            } catch (const std::exception& error) {
+                std::cout << "error: indexing failed: " << error.what() << "\n";
+                return RebuildChoice::Failed;
+            }
+        }
+        if (answer == "n" || answer == "N") {
+            return RebuildChoice::Declined;
+        }
+    }
+}
+
 void writeUsage(std::ostream& output, const char* program) {
     output
         << "Mini Lexical Search " << mini_lexical_search::versionString() << "\n\n"
@@ -58,24 +108,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
         try {
             const auto directory = arguments.empty() ? "./documents" : arguments;
             application.index(directory, [&output](const IndexProgress& event) {
-                switch (event.stage) {
-                case IndexStage::MetadataStarted:
-                    output << "updating file metadata..\n" << std::flush;
-                    break;
-                case IndexStage::MetadataCompleted:
-                    output << "updated file metadata (" << event.elapsedMilliseconds << " ms)\n";
-                    output << event.metadata.notUpdated << " not updated, " << event.metadata.updated
-                           << " updated, " << event.metadata.added << " added, "
-                           << event.metadata.deleted << " deleted\n";
-                    break;
-                case IndexStage::TokenizationStarted:
-                    output << "tokenizing documents..\n" << std::flush;
-                    break;
-                case IndexStage::TokenizationCompleted:
-                    output << "tokenized " << event.tokens.documents << " documents ("
-                           << event.elapsedMilliseconds << " ms)\n";
-                    break;
-                }
+                writeIndexProgress(output, event);
             });
         } catch (const std::exception& error) {
             output << "error: indexing failed: " << error.what() << "\n";
@@ -131,14 +164,19 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
     return LineAction::Ran;
 }
 
-void runRepl(const char* program, SearchApplication& application) {
+int runRepl(const char* program, SearchApplication& application) {
+    if (!application.ready()) {
+        const auto choice = recreateIndex(application);
+        if (choice == RebuildChoice::Declined) {
+            return 0;
+        }
+        if (choice == RebuildChoice::Failed) {
+            return 1;
+        }
+    }
+
     std::cout << "Mini Lexical Search started.\n"
               << "Type '/help' for commands, '/exit' to quit.\n";
-
-    if (!application.ready()) {
-        std::cout << "error: cannot load " << application.snapshotPath().string() << ": "
-                  << application.loadError() << "\n";
-    }
 
     std::string line;
     while (std::cout << "> " && std::getline(std::cin, line)) {
@@ -146,6 +184,7 @@ void runRepl(const char* program, SearchApplication& application) {
             break;
         }
     }
+    return 0;
 }
 
 }  // namespace mini_lexical_search::cli
