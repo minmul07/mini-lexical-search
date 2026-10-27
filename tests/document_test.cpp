@@ -1,3 +1,5 @@
+#include "mini_lexical_search/application/documents.hpp"
+#include "mini_lexical_search/infrastructure/document_io.hpp"
 #include <filesystem>
 #include <chrono>
 #include <cstdint>
@@ -9,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "mini_lexical_search/document.hpp"
+#include "mini_lexical_search/domain/document.hpp"
 
 namespace fs = std::filesystem;
 

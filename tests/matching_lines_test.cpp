@@ -2,7 +2,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include "mini_lexical_search/matching_lines.hpp"
+#include "mini_lexical_search/infrastructure/matching_lines.hpp"
 
 using namespace mini_lexical_search;
 

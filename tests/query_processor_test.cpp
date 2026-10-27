@@ -1,6 +1,6 @@
 #include <iostream>
 #include <stdexcept>
-#include "mini_lexical_search/query_processor.hpp"
+#include "mini_lexical_search/domain/query_processor.hpp"
 
 using namespace mini_lexical_search;
 

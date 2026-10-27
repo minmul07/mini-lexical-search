@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-#include "mini_lexical_search/tokenizer.hpp"
+#include "mini_lexical_search/domain/tokenizer.hpp"
 
 void require(bool condition, const std::string& message) {
     if (!condition) {

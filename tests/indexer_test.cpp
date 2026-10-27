@@ -1,3 +1,4 @@
+#include "mini_lexical_search/infrastructure/index_storage.hpp"
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -8,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "mini_lexical_search/indexer.hpp"
+#include "mini_lexical_search/application/indexer.hpp"
 
 namespace fs = std::filesystem;
 

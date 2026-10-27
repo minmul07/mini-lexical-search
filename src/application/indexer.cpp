@@ -1,0 +1,59 @@
+#include "mini_lexical_search/application/indexer.hpp"
+
+#include "mini_lexical_search/infrastructure/index_storage.hpp"
+
+#include <stdexcept>
+#include <utility>
+
+namespace mini_lexical_search {
+
+TokenizeStats applyIndexWork(IndexWork& work,
+                             InvertedIndex& index,
+                             Tokenizer& tokenizer) {
+    InvertedIndex pending;
+    const TokenSink sink = [&pending](DocumentId documentId,
+                                      std::uint32_t line,
+                                      const std::string& token) {
+        pending.add(token, documentId, line);
+    };
+    const auto stats = tokenizeDocuments(work.documents, work.toTokenize, tokenizer, sink);
+    for (const DocumentId documentId : work.removed) {
+        index.removeDocument(documentId);
+    }
+    index.merge(pending);
+    return stats;
+}
+
+void commitIndexSnapshot(std::vector<Document> documents,
+                         IndexSnapshot& snapshot,
+                         const std::filesystem::path& output) {
+    try {
+        saveIndexSnapshot(documents, snapshot.index, output);
+    } catch (...) {
+        // 메모리의 posting은 이미 재구축되었으므로 마지막 저장 상태로 복구한다.
+        // 다음 `/index`는 일관된 상태에서 다시 시도한다.
+        try {
+            snapshot = loadIndexSnapshot(output);
+        } catch (...) {
+            snapshot = IndexSnapshot{};
+        }
+        throw;
+    }
+    snapshot.documents = std::move(documents);
+}
+
+IndexUpdate updateIndexSnapshot(const std::filesystem::path& directory,
+                                IndexSnapshot& snapshot,
+                                const std::filesystem::path& output,
+                                Tokenizer& tokenizer) {
+    auto work = prepareIndex(directory, snapshot.documents);
+    IndexUpdate update;
+    update.metadata = work.stats;
+    update.tokens = applyIndexWork(work, snapshot.index, tokenizer);
+    if (work.changed) {
+        commitIndexSnapshot(std::move(work.documents), snapshot, output);
+    }
+    return update;
+}
+
+}  // namespace mini_lexical_search
