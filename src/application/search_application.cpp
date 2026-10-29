@@ -2,10 +2,12 @@
 
 #include <chrono>
 #include <exception>
+#include <sstream>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
 
+#include "mini_lexical_search/application/log.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/domain/query_processor.hpp"
 #include "mini_lexical_search/domain/top_k.hpp"
@@ -17,8 +19,21 @@ namespace {
 
 using Clock = std::chrono::steady_clock;
 
-std::int64_t elapsedMilliseconds(Clock::time_point start) {
-    return std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - start).count();
+std::int64_t elapsedMicroseconds(Clock::time_point start) {
+    return std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count();
+}
+
+void logIndexUpdated(std::int64_t metadataUs, std::int64_t tokenizeUs, const IndexStats& stats) {
+    std::ostringstream line;
+    line << "index metadata (" << formatElapsedMilliseconds(metadataUs)
+         << " ms) tokenization (" << formatElapsedMilliseconds(tokenizeUs) << " ms) "
+         << stats.notUpdated << " not updated, " << stats.updated << " updated, " << stats.added
+         << " added, " << stats.deleted << " deleted";
+    appendLog(line.str());
+}
+
+void logIndexFailed(const std::exception& error) {
+    appendLog(std::string("index failed: ") + error.what());
 }
 
 }  // namespace
@@ -26,13 +41,17 @@ std::int64_t elapsedMilliseconds(Clock::time_point start) {
 SearchApplication::SearchApplication(std::filesystem::path snapshotPath)
     : snapshotPath_(std::move(snapshotPath)) {
     workingJob().set("Loading index");
+    const auto started = Clock::now();
     try {
         snapshot_ = loadIndexSnapshot(snapshotPath_);
+        const auto elapsed = elapsedMicroseconds(started);
         workingJob().set("Ready");
+        appendLog("index load succeeded (" + formatElapsedMilliseconds(elapsed) + " ms)");
     } catch (const std::exception& error) {
         ready_ = false;
         loadError_ = error.what();
         workingJob().set("Failed to load index");
+        appendLog("index load failed: " + loadError_);
     }
 }
 
@@ -61,14 +80,15 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
         notify({IndexStage::MetadataStarted, 0, {}, {}});
         const auto metadataStarted = Clock::now();
         auto work = prepareIndex(directory, snapshot_.documents);
-        notify({IndexStage::MetadataCompleted, elapsedMilliseconds(metadataStarted), work.stats, {}});
+        const auto metadataUs = elapsedMicroseconds(metadataStarted);
+        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}});
 
         notify({IndexStage::TokenizationStarted, 0, {}, {}});
         const auto tokenizeStarted = Clock::now();
         const auto tokens = applyIndexWork(work, snapshot_.index, tokenizer_);
-        const auto tokenizeElapsed = work.toTokenize.empty() ? 0 : elapsedMilliseconds(tokenizeStarted);
+        const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
         try {
-            notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
+            notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens});
         } catch (...) {
             // posting 재구축 후 저장 전에 콜백이 실패할 수 있다.
             // 저장 실패 시 commitIndexSnapshot과 동일하게 상태를 복구한다.
@@ -82,10 +102,16 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
         if (work.changed) {
             commitIndexSnapshot(std::move(work.documents), snapshot_, snapshotPath_);
         }
+        logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         workingJob().set("Ready");
         return {work.stats, tokens};
+    } catch (const std::exception& error) {
+        workingJob().set("Failed to update index");
+        logIndexFailed(error);
+        throw;
     } catch (...) {
         workingJob().set("Failed to update index");
+        appendLog("index failed");
         throw;
     }
 }
@@ -105,21 +131,28 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
         notify({IndexStage::MetadataStarted, 0, {}, {}});
         const auto metadataStarted = Clock::now();
         auto work = prepareIndex(directory, std::vector<Document>{});
-        notify({IndexStage::MetadataCompleted, elapsedMilliseconds(metadataStarted), work.stats, {}});
+        const auto metadataUs = elapsedMicroseconds(metadataStarted);
+        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}});
 
         notify({IndexStage::TokenizationStarted, 0, {}, {}});
         const auto tokenizeStarted = Clock::now();
         const auto tokens = applyIndexWork(work, rebuilt.index, tokenizer_);
-        const auto tokenizeElapsed = work.toTokenize.empty() ? 0 : elapsedMilliseconds(tokenizeStarted);
-        notify({IndexStage::TokenizationCompleted, tokenizeElapsed, {}, tokens});
+        const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
+        notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens});
         commitIndexSnapshot(std::move(work.documents), rebuilt, snapshotPath_);
+        logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         snapshot_ = std::move(rebuilt);
         ready_ = true;
         loadError_.clear();
         workingJob().set("Ready");
         return {work.stats, tokens};
+    } catch (const std::exception& error) {
+        workingJob().set("Failed to load index");
+        logIndexFailed(error);
+        throw;
     } catch (...) {
         workingJob().set("Failed to load index");
+        appendLog("index failed");
         throw;
     }
 }

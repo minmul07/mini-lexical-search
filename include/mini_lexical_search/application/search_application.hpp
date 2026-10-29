@@ -20,7 +20,8 @@ enum class IndexStage {
 
 struct IndexProgress {
     IndexStage stage;
-    std::int64_t elapsedMilliseconds = 0;
+    // 완료 단계의 경과 시간이다. 시작 단계는 0이다.
+    std::int64_t elapsedMicroseconds = 0;
     IndexStats metadata;
     TokenizeStats tokens;
 };

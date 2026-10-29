@@ -1,9 +1,9 @@
 #include "mini_lexical_search/presentation/cli/cli.hpp"
+#include "mini_lexical_search/application/log.hpp"
 #include "mini_lexical_search/domain/version.hpp"
 
 #include <chrono>
 #include <exception>
-#include <iomanip>
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -19,7 +19,8 @@ void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
         output << "updating file metadata..\n" << std::flush;
         break;
     case IndexStage::MetadataCompleted:
-        output << "updated file metadata (" << event.elapsedMilliseconds << " ms)\n";
+        output << "updated file metadata (" << formatElapsedMilliseconds(event.elapsedMicroseconds)
+               << " ms)\n";
         output << event.metadata.notUpdated << " not updated, " << event.metadata.updated
                << " updated, " << event.metadata.added << " added, "
                << event.metadata.deleted << " deleted\n";
@@ -29,7 +30,7 @@ void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
         break;
     case IndexStage::TokenizationCompleted:
         output << "tokenized " << event.tokens.documents << " documents ("
-               << event.elapsedMilliseconds << " ms)\n";
+               << formatElapsedMilliseconds(event.elapsedMicroseconds) << " ms)\n";
         break;
     }
 }
@@ -132,10 +133,22 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                 const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
                                            Clock::now() - started)
                                            .count();
-                std::ostringstream elapsed;
-                elapsed << (elapsedUs / 1000) << '.' << std::setw(3) << std::setfill('0')
-                        << (elapsedUs % 1000);
-                output << "searched (" << elapsed.str() << " ms)\n";
+                const auto elapsed = formatElapsedMilliseconds(elapsedUs);
+                std::ostringstream record;
+                record << "search " << arguments << " (" << elapsed << " ms) results="
+                       << results.size();
+                for (std::size_t i = 0; i < results.size(); ++i) {
+                    const auto& result = results[i];
+                    record << ' ' << (i + 1) << " id=" << result.document.id
+                           << " score=" << result.score
+                           << " matchingLines=" << result.totalMatchingLines << ' '
+                           << result.document.title << " (" << result.document.path << ')';
+                    for (const auto& match : result.lines) {
+                        record << ' ' << match.number << ':' << match.text;
+                    }
+                }
+                appendLog(record.str());
+                output << "searched (" << elapsed << " ms)\n";
                 if (results.empty()) output << "No matches.\n";
                 for (std::size_t i = 0; i < results.size(); ++i) {
                     const auto& result = results[i];

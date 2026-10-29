@@ -39,6 +39,7 @@ target_link_libraries(mini_lexical_search_infrastructure
 add_library(mini_lexical_search_application
     src/application/documents.cpp
     src/application/indexer.cpp
+    src/application/log.cpp
     src/application/search_application.cpp
     src/application/working_job.cpp)
 target_link_libraries(mini_lexical_search_application

@@ -45,7 +45,7 @@ void requireStages(const std::vector<IndexProgress>& events) {
     require(events.size() == expected.size(), "wrong event count");
     for (std::size_t i = 0; i < events.size(); ++i) {
         require(events[i].stage == expected[i], "wrong event order");
-        require(events[i].elapsedMilliseconds >= 0, "negative elapsed time");
+        require(events[i].elapsedMicroseconds >= 0, "negative elapsed time");
     }
 }
 
@@ -96,7 +96,7 @@ void testSession(const fs::path& root) {
     const auto unchanged = reopened.index(documents, collect);
     requireStages(events);
     require(unchanged.metadata.notUpdated == 2 && unchanged.tokens.documents == 0 &&
-            events[3].elapsedMilliseconds == 0, "unchanged indexing failed");
+            events[3].elapsedMicroseconds == 0, "unchanged indexing failed");
     require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
             "unchanged indexing rewrote snapshot");
 
