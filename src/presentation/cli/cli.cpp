@@ -1,7 +1,9 @@
 #include "mini_lexical_search/presentation/cli/cli.hpp"
 #include "mini_lexical_search/domain/version.hpp"
 
+#include <chrono>
 #include <exception>
+#include <iomanip>
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -124,7 +126,16 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                    << application.snapshotPath().string() << "\n";
         } else {
             try {
+                using Clock = std::chrono::steady_clock;
+                const auto started = Clock::now();
                 const auto results = application.search(arguments, kMaxMatchingLines);
+                const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
+                                           Clock::now() - started)
+                                           .count();
+                std::ostringstream elapsed;
+                elapsed << (elapsedUs / 1000) << '.' << std::setw(3) << std::setfill('0')
+                        << (elapsedUs % 1000);
+                output << "searched (" << elapsed.str() << " ms)\n";
                 if (results.empty()) output << "No matches.\n";
                 for (std::size_t i = 0; i < results.size(); ++i) {
                     const auto& result = results[i];

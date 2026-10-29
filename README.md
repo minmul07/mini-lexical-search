@@ -23,7 +23,7 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 
 ```text
 > /search 자료구조
-
+searched (1.234 ms)
 1. data_structure.md       score: 8.72
    12: 자료구조는 데이터를 효율적으로 저장하는 방법이다.
    40: 배열과 자료구조를 비교하면 다음과 같다.
@@ -46,7 +46,7 @@ ctest --test-dir build --output-on-failure
 
 자세한 내용은 [개발 환경](docs/DEVELOPMENT.md)을 참고한다.
 
-`start`는 기본적으로 FTXUI TUI를 연다. 터미널 중앙의 최대 너비 100열 흰색 테두리 입력 상자에서 Enter로 `/index`, `/search`, `/help`, `/exit`, `/quit`를 실행하고, 출력은 상자 아래에 표시한다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. 같은 명령의 줄 단위 REPL은 `--no-tui`로 실행한다. CLI 실행 후 표준 입력으로 `/index [디렉터리]`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. `/index`는 기본 `./documents` 또는 지정한 디렉터리의 `.txt`·`.md` 문서 메타데이터를 `.data/index.json`에 저장한다. 각 문서에는 원문 바이트의 SHA-256 `hash`를 저장하고, 이전 목록과 비교해 `n not updated, n updated, n added, n deleted`를 출력한다. 변경이 없으면 JSON을 다시 쓰지 않는다. 이어서 추가·변경된 문서만 줄 단위로 토큰화하여 정규화 토큰 수를 `tokenCount`에 기록하고, 토큰·등장 횟수·줄 번호를 Line-aware Inverted Index에 반영한 뒤 `tokenized <문서 수> documents (<시간> ms)`로 소요 시간을 출력한다. 변경 없는 문서는 토큰화와 Posting 갱신을 건너뛴다. 앱은 시작할 때 스냅샷을 로드하므로 재실행 후에도 인덱스를 그대로 사용하며, 손상된 스냅샷은 덮어쓰지 않고 오류로 보고한다. 검색도 손상된 스냅샷 로드 실패 시 거부한다.
+`start`는 기본적으로 FTXUI TUI를 연다. 터미널 중앙의 최대 너비 100열 흰색 테두리 입력 상자에서 Enter로 `/index`, `/search`, `/help`, `/exit`, `/quit`를 실행하고, 출력은 상자 아래에 표시한다. `/exit`, `/quit`, Esc, Ctrl+C로 종료한다. 같은 명령의 줄 단위 REPL은 `--no-tui`로 실행한다. CLI 실행 후 표준 입력으로 `/index [디렉터리]`, `/search <검색어>`, `/help`, `/exit` 또는 `/quit` 명령을 전달한다. `/index`는 기본 `./documents` 또는 지정한 디렉터리의 `.txt`·`.md` 문서 메타데이터를 `.data/index.json`에 저장한다. 각 문서에는 원문 바이트의 SHA-256 `hash`를 저장하고, 이전 목록과 비교해 `n not updated, n updated, n added, n deleted`를 출력한다. 변경이 없으면 JSON을 다시 쓰지 않는다. 이어서 추가·변경된 문서만 줄 단위로 토큰화하여 정규화 토큰 수를 `tokenCount`에 기록하고, 토큰·등장 횟수·줄 번호를 Line-aware Inverted Index에 반영한 뒤 `tokenized <문서 수> documents (<시간> ms)`로 소요 시간을 출력한다. 변경 없는 문서는 토큰화와 Posting 갱신을 건너뛴다. 앱은 시작할 때 스냅샷을 로드하므로 재실행 후에도 인덱스를 그대로 사용하며, 손상된 스냅샷은 덮어쓰지 않고 오류로 보고한다. 검색도 손상된 스냅샷 로드 실패 시 거부한다. `/search`는 결과 앞에 `searched (0.123 ms)`처럼 검색 소요 시간을 소수점 셋째 자리 밀리초로 출력한다.
 
 `-h`, `--help`, `-v`, `--version`, `--no-tui`는 실행 시 옵션으로 사용할 수 있다.
 
