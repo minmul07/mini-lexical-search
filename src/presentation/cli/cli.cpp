@@ -74,7 +74,7 @@ void writeUsage(std::ostream& output, const char* program) {
         << "  --no-tui       TUI 없이 CLI로 실행\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  /search <검색어>    모든 매칭 문서·행 검색 (AND 또는 OR 지원)\n"
+        << "  /search <검색어>    점수 상위 10개 문서 검색 (동점은 문서 ID순, AND 또는 OR)\n"
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }

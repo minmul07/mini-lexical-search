@@ -8,6 +8,7 @@
 
 #include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/domain/query_processor.hpp"
+#include "mini_lexical_search/domain/top_k.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
 #include "mini_lexical_search/infrastructure/matching_lines.hpp"
 
@@ -124,10 +125,11 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
 }
 
 std::vector<SearchResult> SearchApplication::search(const std::string& text,
-                                                    std::size_t maxMatchingLines) {
+                                                    std::size_t maxMatchingLines,
+                                                    std::size_t topK) {
     requireReady();
     const auto query = parseQuery(text, tokenizer_);
-    const auto candidates = QueryProcessor{}.process(query, snapshot_.index);
+    const auto candidates = selectTopK(QueryProcessor{}.process(query, snapshot_.index), topK);
     std::unordered_map<DocumentId, const Document*> documents;
     for (const auto& document : snapshot_.documents) documents.emplace(document.id, &document);
 

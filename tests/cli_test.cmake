@@ -46,7 +46,7 @@ check_cli(eof_no_tui_first "" 0 "Mini Lexical Search started." --no-tui start)
 check_cli(commands "\n  \t\n /index \n/search 자료구조 알고리즘\n/help\n/search\n/index extra\n/exit extra\n/indexing\n/searching query\nsearch query\n/unknown\n/index\n/exit\n/unknown_after_exit\n"
     0 "error: indexing failed:" start --no-tui)
 foreach(expected
-        "expected AND or OR between keywords" "사용법:" "Usage: /search <query>"
+        "expected AND or OR between keywords" "사용법:" "상위 10" "Usage: /search <query>"
         "not a directory: extra" "unexpected arguments for /exit"
         "Unknown command: /indexing" "Unknown command: /searching query"
         "Unknown command: search query" "Unknown command: /unknown")
@@ -142,7 +142,7 @@ endif()
 
 file(MAKE_DIRECTORY "${fixture}/search_docs")
 file(WRITE "${fixture}/search_docs/a.txt" "alpha\nnoise\nalpha beta\nalpha\nalpha\nalpha gamma")
-file(WRITE "${fixture}/search_docs/b.md" "beta beta beta beta beta beta\n")
+file(WRITE "${fixture}/search_docs/b.md" "beta beta beta beta beta beta beta\n")
 file(WRITE "${fixture}/search_docs/c.txt" "noise\n")
 check_cli(search_build "/index search_docs\n/search alpha\n/exit\n" 0 "6: alpha gamma" start --no-tui)
 file(READ "${fixture}/.data/index.json" search_snapshot)
@@ -150,7 +150,7 @@ file(TIMESTAMP "${fixture}/.data/index.json" search_timestamp "%s")
 # Nonmatching files need not be available to search.
 file(REMOVE "${fixture}/search_docs/c.txt")
 check_cli(search_reload "/search alpha OR beta\n/search alpha AND beta AND gamma\n/search absent\n/search alpha OR\n/help\n/exit\n" 0 "6: alpha gamma" start --no-tui)
-foreach(expected "a.txt" "b.md" "score: 6" "3: alpha beta" "No matches." "ends with an operator" "사용법:")
+foreach(expected "a.txt" "b.md" "score: 7" "score: 6" "3: alpha beta" "No matches." "ends with an operator" "사용법:" "상위 10")
     string(FIND "${last_output}" "${expected}" found)
     if(found EQUAL -1)
         message(FATAL_ERROR "search_reload: missing ${expected}: ${last_output}")
@@ -160,10 +160,10 @@ string(FIND "${last_output}" "2: noise" found)
 if(NOT found EQUAL -1)
     message(FATAL_ERROR "search printed nonmatching lines")
 endif()
-string(FIND "${last_output}" "a.txt" first_position)
-string(FIND "${last_output}" "b.md" second_position)
-if(NOT first_position LESS second_position)
-    message(FATAL_ERROR "search must preserve ID order, not score order")
+string(FIND "${last_output}" "b.md" higher_score)
+string(FIND "${last_output}" "a.txt" lower_score)
+if(NOT higher_score LESS lower_score)
+    message(FATAL_ERROR "search must rank the higher TF score first: ${last_output}")
 endif()
 file(READ "${fixture}/.data/index.json" after_search)
 file(TIMESTAMP "${fixture}/.data/index.json" after_timestamp "%s")

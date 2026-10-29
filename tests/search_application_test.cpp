@@ -7,6 +7,7 @@
 #include <iterator>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -194,6 +195,151 @@ void testCorruptionAndFirstSave(const fs::path& root) {
             "first save retry failed");
 }
 
+void testRanking(const fs::path& root) {
+    const auto documents = root / "documents";
+    const auto snapshot = root / "index.json";
+    fs::create_directories(documents);
+    write(documents / "a_top.txt", "red\nred\nred\nblue blue\n");
+    write(documents / "b_early.txt", "same\n");
+    write(documents / "c_late.txt", "same\n");
+    write(documents / "m_low.txt", "red\n");
+    write(documents / "y_top.txt", "same same\n");
+    write(documents / "z_mid.txt", "red red\nblue\n");
+
+    SearchApplication app(snapshot);
+    const auto indexed = app.index(documents);
+    require(indexed.metadata.added == 6, "ranking fixture was not indexed");
+
+    const auto ranked = app.search("red");
+    require(ranked.size() == 3 && ranked[0].document.title == "a_top.txt" && ranked[0].score == 3 &&
+                ranked[0].lines.size() == 3 && ranked[0].lines[0].text == "red" &&
+                ranked[1].document.title == "z_mid.txt" && ranked[1].score == 2 &&
+                ranked[2].document.title == "m_low.txt" && ranked[2].score == 1 &&
+                ranked[0].document.id < ranked[2].document.id && ranked[2].document.id < ranked[1].document.id,
+            "single keyword ranking failed");
+
+    const auto limited = app.search("red", 1, 2);
+    require(limited.size() == 2 && limited[0].document.title == "a_top.txt" &&
+                limited[0].lines.size() == 1 && limited[0].totalMatchingLines == 3 &&
+                limited[0].lines[0].text == "red" && limited[1].document.title == "z_mid.txt" &&
+                limited[1].warning.empty(),
+            "maxMatchingLines and topK failed");
+    require(app.search("red", 0, 0).empty(), "topK zero returned matches");
+    require(app.search("red", 0, 1).size() == 1 && app.search("red", 0, 1)[0].document.title == "a_top.txt",
+            "topK one failed");
+    const auto all = app.search("red", 0, 3);
+    require(all.size() == 3 && all[0].score == 3 && all[2].score == 1, "topK equal to candidates failed");
+    const auto more = app.search("red", 0, 100);
+    require(more.size() == 3 && more[0].document.title == "a_top.txt" &&
+                more[2].document.title == "m_low.txt",
+            "topK above candidates failed");
+
+    const auto both = app.search("red AND blue");
+    require(both.size() == 2 && both[0].document.title == "a_top.txt" && both[0].score == 5 &&
+                both[1].document.title == "z_mid.txt" && both[1].score == 3,
+            "AND ranking failed");
+    const auto either = app.search("red OR blue");
+    require(either.size() == 3 && either[0].score == 5 && either[1].score == 3 && either[2].score == 1,
+            "OR ranking failed");
+    const auto repeatedAnd = app.search("red AND red");
+    const auto repeatedOr = app.search("red OR red");
+    require(repeatedAnd.size() == ranked.size() && repeatedOr.size() == ranked.size(),
+            "duplicate terms changed the result count");
+    for (std::size_t i = 0; i < ranked.size(); ++i) {
+        require(repeatedAnd[i].score == ranked[i].score && repeatedAnd[i].document.id == ranked[i].document.id &&
+                    repeatedOr[i].score == ranked[i].score && repeatedOr[i].document.id == ranked[i].document.id,
+                "duplicate terms changed the score");
+    }
+
+    const auto ties = app.search("same", 0, 2);
+    require(ties.size() == 2 && ties[0].document.title == "y_top.txt" && ties[0].score == 2 &&
+                ties[1].document.title == "b_early.txt" && ties[1].score == 1,
+            "tie at the topK boundary failed");
+    const auto allTies = app.search("same");
+    require(allTies.size() == 3 && allTies[1].document.title == "b_early.txt" &&
+                allTies[2].document.title == "c_late.txt" &&
+                allTies[1].document.id < allTies[2].document.id,
+            "equal scores were not ordered by document id");
+
+    const auto saved = read(snapshot);
+    const auto modified = fs::last_write_time(snapshot);
+    SearchApplication reopened(snapshot);
+    const auto reloaded = reopened.search("red");
+    require(reloaded.size() == ranked.size() && reloaded[0].score == 3 && reloaded[0].lines.size() == 3 &&
+                reloaded[2].document.title == "m_low.txt",
+            "reloaded ranking changed");
+    require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
+            "ranking search changed the snapshot");
+
+    fs::remove(documents / "m_low.txt");
+    const auto skipped = app.search("red", 0, 2);
+    require(skipped.size() == 2 && skipped[0].document.title == "a_top.txt" && skipped[0].warning.empty() &&
+                skipped[1].document.title == "z_mid.txt" && skipped[1].warning.empty(),
+            "document outside topK was returned or read");
+
+    fs::remove(documents / "a_top.txt");
+    const auto failed = app.search("red", 0, 1);
+    require(failed.size() == 1 && failed[0].document.title == "a_top.txt" && failed[0].score == 3 &&
+                failed[0].lines.empty() && failed[0].totalMatchingLines == 3 &&
+                failed[0].warning.find("cannot open") != std::string::npos,
+            "read failure replaced the selected document");
+    require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
+            "failed read changed the snapshot");
+}
+
+void testDefaultTopK(const fs::path& root) {
+    const auto documents = root / "documents";
+    const auto snapshot = root / "index.json";
+    fs::create_directories(documents);
+    const std::vector<std::pair<std::string, int>> files{
+        {"n00.txt", 3}, {"n01.txt", 1}, {"n02.txt", 12}, {"n03.txt", 2},
+        {"n04.txt", 11}, {"n05.txt", 10}, {"n06.txt", 9}, {"n07.txt", 8},
+        {"n08.txt", 7}, {"n09.txt", 6}, {"n10.txt", 5}, {"n11.txt", 4}};
+    for (const auto& [title, score] : files) {
+        std::string text;
+        for (int count = 0; count < score; ++count) {
+            if (count != 0) text += ' ';
+            text += "hit";
+        }
+        write(documents / title, text + "\n");
+    }
+
+    SearchApplication app(snapshot);
+    require(app.index(documents).metadata.added == 12, "default topK fixture was not indexed");
+    const auto results = app.search("hit");
+    const std::vector<std::string> expected{
+        "n02.txt", "n04.txt", "n05.txt", "n06.txt", "n07.txt", "n08.txt",
+        "n09.txt", "n10.txt", "n11.txt", "n00.txt"};
+    require(results.size() == expected.size(), "default search did not return 10 results");
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        require(results[i].document.title == expected[i] &&
+                    results[i].score == static_cast<double>(12 - i) && results[i].warning.empty() &&
+                    results[i].lines.size() == 1,
+                "default topK order failed");
+    }
+    bool followsIdOrder = true;
+    for (std::size_t i = 1; i < results.size(); ++i) {
+        if (results[i].document.id < results[i - 1].document.id) followsIdOrder = false;
+    }
+    require(!followsIdOrder, "default results followed document id order");
+
+    fs::remove(documents / "n01.txt");
+    fs::remove(documents / "n03.txt");
+    const auto skipped = app.search("hit");
+    require(skipped.size() == 10 && skipped.front().document.title == "n02.txt" &&
+                skipped.back().document.title == "n00.txt",
+            "missing documents outside topK changed the result");
+    for (const auto& result : skipped) {
+        require(result.warning.empty(), "document outside topK was opened");
+    }
+
+    fs::remove(documents / "n02.txt");
+    const auto failed = app.search("hit", 0, 1);
+    require(failed.size() == 1 && failed[0].document.title == "n02.txt" &&
+                failed[0].warning.find("cannot open") != std::string::npos,
+            "default topK replaced a document that could not be read");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -203,6 +349,8 @@ int main(int argc, char** argv) {
         fs::remove_all(root);
         fs::create_directories(root);
         testSession(root / "session");
+        testRanking(root / "ranking");
+        testDefaultTopK(root / "default-top-k");
         testCorruptionAndFirstSave(root / "failures");
         fs::remove_all(root);
     } catch (const std::exception& error) {

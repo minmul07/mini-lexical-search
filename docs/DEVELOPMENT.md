@@ -70,7 +70,7 @@ No matches.
 ### 실행 중 명령
 
 * `/index [디렉터리]` — `.txt`·`.md` 문서 메타데이터와 Line-aware Inverted Index를 `.data/index.json` 스냅샷으로 저장 (기본 입력 경로: `./documents`)
-* `/search <검색어>` — 단일 키워드 또는 대문자 AND/OR로 검색. 모든 매칭 문서·행을 문서 ID·줄 번호순으로 출력하며 TF 합산 점수를 표시한다.
+* `/search <검색어>` — 단일 키워드 또는 대문자 AND/OR로 검색. TF 합산 점수 내림차순으로 상위 10개 문서와 매칭 행을 출력한다. 동점은 문서 ID 오름차순이고, 줄은 줄 번호순이다.
 * `/help` — 도움말
 * `/exit`, `/quit` — 종료
 
@@ -111,7 +111,7 @@ CLI → Application → Infrastructure → Domain 방향으로 연결하며 Appl
 `application/search_application.hpp`의 `SearchApplication`이 스냅샷 경로, 메모리 인덱스, Tokenizer와 초기 로드 상태를 소유한다. 생성 시 로드하며 파일이 없으면 빈 인덱스, 손상됐으면 `ready() == false`와 `loadError()`로 원인을 제공한다. 이 실행에서는 인덱싱과 검색을 거부한다.
 
 * `index(directory, progressCallback)`는 동기적으로 인덱싱하고 `IndexUpdate`를 반환한다. 콜백은 선택 사항이며 메타데이터 시작·완료, 토큰화 시작·완료 이벤트를 순서대로 받는다. 완료 이벤트에는 해당 단계의 집계와 밀리초 시간이 있다. 토큰화 완료는 저장 완료를 의미하지 않는다. 단계 실패 시 해당 완료 이벤트는 없으며 예외를 전달한다. 저장 또는 Posting 갱신 후 콜백 실패 시 마지막 저장 상태로 복구한다. 콜백에서 앱을 재호출하거나 다른 스레드에서 동시에 접근하지 않는다.
-* `search(query, maxMatchingLines = 0)`는 문서 ID순 `SearchResult` 배열을 반환한다. 문서 정보·TF 점수·전체 매칭 행 수·추출한 원문 행·문서별 읽기 경고를 값으로 소유한다. `0`은 모든 행이며 양수는 문서당 한도다. 질의 오류는 예외로, 파일 읽기 오류는 문서별 경고로 전달한다. 검색은 스냅샷을 저장하지 않는다.
+* `search(query, maxMatchingLines = 0, topK = 10)`는 TF 점수 내림차순 `SearchResult` 배열을 반환한다. 동점은 문서 ID 오름차순이다. `topK`가 0이면 빈 결과이고, 후보보다 크면 모든 후보를 반환한다. 매칭 줄 원문은 선정된 문서만 읽는다. 문서 정보·TF 점수·전체 매칭 행 수·추출한 원문 행·문서별 읽기 경고를 값으로 소유한다. `maxMatchingLines`의 `0`은 모든 행이며 양수는 문서당 한도다. 질의 오류는 예외로, 파일 읽기 오류는 문서별 경고로 전달하며 차순위 문서로 대체하지 않는다. 검색은 스냅샷을 저장하지 않는다.
 
 공개 헤더 경로는 계층별로 변경되었다. 기존 함수 이름과 네임스페이스는 유지하지만 옛 평면 헤더 경로의 호환 래퍼는 제공하지 않는다. Document·IndexSnapshot은 Domain, 인덱싱 실행 API는 Application, 문서·스냅샷 저장 API는 Infrastructure 헤더를 사용한다. `main.cpp`는 인자를 파싱해 `SearchApplication`을 구성한 뒤 기본 `start`에서는 TUI를, `--no-tui`에서는 CLI REPL을 실행한다. 두 경로는 `cli::handleLine`으로 명령을 처리한다.
 
@@ -120,12 +120,13 @@ CLI → Application → Infrastructure → Domain 방향으로 연결하며 Appl
 실행 환경, 문서 메타데이터·토큰화, Line-aware Inverted Index와 JSON 스냅샷 저장·로드를 구현한 상태이다.
 
 * 완료: CMake 빌드, `mini_lexical_search` 실행 파일, 버전 헤더, Document 수집·SHA-256 해시·JSON 저장, SimpleTokenizer 기반 토큰화와 `tokenCount`, 변경 문서 토큰화 게이트, `unordered_map` 기반 Inverted Index, `.data/index.json` 스냅샷 저장·로드, CTest 테스트
-* 완료: 단일 키워드·AND/OR Query Processing, TF 합산 점수, 모든 매칭 문서·행 출력
+* 완료: 단일 키워드·AND/OR Query Processing, TF 합산 점수
+* 완료: TF 점수 내림차순 Ranking, 동점 시 문서 ID 오름차순, 크기 K의 Min Heap Top-K(기본 10)
 * 완료: 계층 분리, UI 독립적인 `SearchApplication` 인덱싱·검색 API와 진행 이벤트
 * 완료: `start` 기본 TUI(중앙 입력 상자, Enter로 CLI와 같은 명령 실행, 상자 아래 출력, 우측 상단 `workingJob` 텍스트)와 `--no-tui` CLI 경로
-* 미구현: Ranking 정렬, Top-K, 화면을 넘는 TUI 출력 처리, 검색 결과 전용 화면
+* 미구현: 화면을 넘는 TUI 출력 처리, 검색 결과 전용 화면
 
-검색은 시작 시 로드한 스냅샷 또는 `/index`로 갱신한 메모리 인덱스를 조회하며 스냅샷 로드 실패 시 거부한다. `src/domain/query_processor.cpp`는 동일한 Tokenizer를 사용하는 질의 파싱과 정렬된 Posting List의 교집합·합집합을 담당한다. 반복 term은 한 번만 계산한다. 혼합 AND/OR, 괄호, 따옴표, 암묵적 연산자는 지원하지 않는다. `src/infrastructure/matching_lines.cpp`는 매칭 문서만 한 번씩 순차적으로 읽으며 기본 한도 `0`은 전체 매칭 행, 양수 한도는 문서당 앞 N개 행이다. 현재 CLI는 `0`을 사용한다. 파일 읽기 실패나 기록된 줄 부재는 문서별 경고로 처리한다. 인덱싱 후 원문 변경은 자동 검증하지 않으므로 `/index`로 갱신해야 한다.
+검색은 시작 시 로드한 스냅샷 또는 `/index`로 갱신한 메모리 인덱스를 조회하며 스냅샷 로드 실패 시 거부한다. `src/domain/query_processor.cpp`는 동일한 Tokenizer를 사용하는 질의 파싱과 정렬된 Posting List의 교집합·합집합을 담당한다. 반복 term은 한 번만 계산하고, 후보 전체는 문서 ID순으로 반환한다. 혼합 AND/OR, 괄호, 따옴표, 암묵적 연산자는 지원하지 않는다. `src/domain/top_k.cpp`의 `selectTopK`는 그 후보에서 상위 K개만 순위순으로 고른다. Heap은 `std::priority_queue`이며 후보 인덱스만 저장해 `matchedLines`를 선택 중에 복사하지 않는다. 루트는 현재 선택된 후보 중 가장 낮은 순위다. 후보 수 M에 대해 선택은 O(M log K), 결과 정렬은 O(K log K), heap의 추가 공간은 O(K)이다. `QueryProcessor`의 전체 후보 배열은 별도로 남으므로 검색 전체 메모리가 O(K)가 되지는 않는다. K가 0이면 빈 결과이고, 후보가 K보다 적으면 모두 반환한다. `src/infrastructure/matching_lines.cpp`는 선정된 문서만 한 번씩 순차적으로 읽으며 기본 한도 `0`은 전체 매칭 행, 양수 한도는 문서당 앞 N개 행이다. 현재 CLI는 한도 `0`과 상위 10개를 사용한다. 파일 읽기 실패나 기록된 줄 부재는 문서별 경고로 처리하고 차순위 문서로 대체하지 않는다. 인덱싱 후 원문 변경은 자동 검증하지 않으므로 `/index`로 갱신해야 한다.
 
 `src/infrastructure/document_io.cpp`는 재귀 문서 수집, Document 배열의 JSON 저장, 원문 줄 읽기를 담당한다. `src/application/documents.cpp`는 변경 문서 판별, 선택 문서 토큰화, 메타데이터 전용 인덱싱을 담당한다. 하위 디렉터리를 포함해 소문자 `.txt`·`.md` 일반 파일만 수집하며 심볼릭 링크는 제외한다. 첫 저장 시 절대 경로순으로 정렬하고 ID를 0부터 부여한다. 이후에는 기존 문서 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `title`은 확장자를 포함한 파일명이다. 문서 원문을 바이너리 스트림으로 읽어 자체 구현한 SHA-256으로 `hash`를 계산한다. `prepareIndex`가 이전 문서 테이블과 비교해 `notUpdated`/`updated`/`added`/`deleted`를 분류하고, 추가·변경된 문서의 인덱스만 `toTokenize`에, 변경·삭제된 문서 ID를 `removed`에 담는다. `tokenizeDocuments`는 `toTokenize`의 문서만 `readDocumentLines`로 줄 단위(1부터 시작)로 읽고 `Tokenizer::tokenize` 결과를 줄 번호와 함께 방출하며, 문서별 토큰 수를 `tokenCount`에 기록한다. 같은 해시·제목인 문서는 재토큰화하지 않고 기존 `tokenCount`를 유지하며, 변경이 감지된 문서는 이전 토큰 결과를 버리고 처음부터 다시 만든다.
 

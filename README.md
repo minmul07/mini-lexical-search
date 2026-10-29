@@ -2,7 +2,7 @@
 
 로컬 문서(.txt / .md)를 위한 **Line-aware Inverted Index** 기반 전문 검색 엔진.
 
-매 검색마다 모든 파일을 읽는 대신, 문서를 인덱싱하여 토큰의 **등장 횟수(TF)** 와 **출처 줄 번호** 를 저장한다. 현재 검색은 Index로 관련 문서를 찾고, 모든 매칭 문서만 순차 Scan하여 모든 매칭 줄을 보여 준다. Ranking 정렬 및 Top-K는 후속 단계이다.
+매 검색마다 모든 파일을 읽는 대신, 문서를 인덱싱하여 토큰의 **등장 횟수(TF)** 와 **출처 줄 번호** 를 저장한다. 검색은 Index로 후보를 찾고, TF 점수 상위 10개 문서만 순차 Scan하여 매칭 줄을 보여 준다.
 
 ## 핵심 아이디어
 
@@ -13,11 +13,11 @@ Query → Index Lookup → Ranking → Heap Top-K → Matching Lines
 ```
 
 * **Index**: `term → (doc, termFrequency, lines)`
-* **Ranking (P0)**: `score = termFrequency`
-* **Top-K**: Min Heap으로 `O(N log K)` 선택
-* **매칭 줄**: 현재 모든 매칭 문서의 모든 매칭 줄 출력. 내부 최대 출력 개수 인자는 문서당 기본 `0`(무제한), 양수이면 앞 N개 줄 제한
+* **Ranking (P0)**: `score = termFrequency` 합. 내림차순이며 동점은 문서 ID 오름차순
+* **Top-K**: 크기 K의 Min Heap(`std::priority_queue`). 기본 K는 10이고 K가 0이면 빈 결과. 후보 수 M에 대해 선택은 `O(M log K)`
+* **매칭 줄**: 상위 K개 문서만 읽는다. 문서당 최대 출력 개수는 기본 `0`(무제한), 양수이면 앞 N개 줄
 
-`/search alpha`, `/search alpha AND beta`, `/search alpha OR beta`를 지원한다. 결과는 점수순이 아닌 문서 ID순이며 점수는 TF 합이다. 연산자는 독립된 대문자만 인식하고 혼합 AND/OR·괄호·따옴표·암묵적 연산자는 지원하지 않는다. 원문 변경은 `/index`로 갱신해야 하며 파일 읽기 실패는 문서별 경고로 표시한다. 위 Ranking/Top-K 흐름은 최종 목표이다.
+`/search alpha`, `/search alpha AND beta`, `/search alpha OR beta`를 지원한다. 결과는 TF 합산 점수 내림차순이며 동점은 문서 ID 오름차순이다. CLI는 상위 10개를 출력한다. 연산자는 독립된 대문자만 인식하고 혼합 AND/OR·괄호·따옴표·암묵적 연산자는 지원하지 않는다. 원문 변경은 `/index`로 갱신해야 하며 파일 읽기 실패는 문서별 경고로 표시한다. 읽기에 실패해도 차순위 문서로 바꾸지 않는다.
 
 ## 예시
 

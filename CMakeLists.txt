@@ -21,6 +21,7 @@ add_library(mini_lexical_search_domain
     src/domain/inverted_index.cpp
     src/domain/query_processor.cpp
     src/domain/tokenizer.cpp
+    src/domain/top_k.cpp
     src/domain/version.cpp)
 target_include_directories(mini_lexical_search_domain
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

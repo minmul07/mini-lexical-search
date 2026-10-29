@@ -58,10 +58,13 @@ public:
     IndexUpdate rebuildIndex(const std::filesystem::path& directory,
                              const IndexProgressCallback& progress = {});
 
-    // 문서 ID순으로 결과를 반환한다. 한도가 0이면 모든 매칭 줄을 포함한다.
+    // 점수 내림차순으로 상위 topK개를 반환한다. 동점은 문서 ID 오름차순이다.
+    // topK가 0이면 빈 결과이다. maxMatchingLines가 0이면 모든 매칭 줄을 포함한다.
+    // 매칭 줄 원문은 선정된 문서만 읽는다. 읽기 실패는 그 결과의 경고로 남긴다.
     // 초기 로드 실패 또는 잘못된 질의 시 예외를 던진다. snapshot을 저장하지 않는다.
     std::vector<SearchResult> search(const std::string& query,
-                                     std::size_t maxMatchingLines = 0);
+                                     std::size_t maxMatchingLines = 0,
+                                     std::size_t topK = 10);
 
 private:
     void requireReady() const;
