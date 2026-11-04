@@ -51,7 +51,7 @@ void requireStages(const std::vector<IndexProgress>& events) {
 
 void testSession(const fs::path& root) {
     const auto documents = root / "documents";
-    const auto snapshot = root / "data/index.json";
+    const auto snapshot = root / "data/index.bin";
     fs::create_directories(documents);
     write(documents / "a.md", "Alpha beta alpha\nalpha\n자료구조 알고리즘\n");
     write(documents / "b.txt", "beta\nalpha\n자료구조\n");
@@ -157,8 +157,8 @@ void testSession(const fs::path& root) {
 
 void testCorruptionAndFirstSave(const fs::path& root) {
     fs::create_directories(root);
-    const auto corrupt = root / "corrupt.json";
-    write(corrupt, "{broken");
+    const auto corrupt = root / "corrupt.bin";
+    write(corrupt, "not a binary index");
     SearchApplication broken(corrupt);
     require(!broken.ready() && !broken.loadError().empty(), "corrupt snapshot accepted");
     require(workingJob().label() == "Failed to load index", "corrupt snapshot must fail the job");
@@ -166,7 +166,8 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     std::vector<IndexProgress> events;
     requireFailure([&] { broken.index(root, [&](const IndexProgress& e) { events.push_back(e); }); },
                    "index on corrupt session accepted");
-    require(events.empty() && read(corrupt) == "{broken", "corrupt snapshot overwritten");
+    require(events.empty() && read(corrupt) == "not a binary index",
+            "corrupt snapshot overwritten");
 
     const auto documents = root / "documents";
     fs::create_directories(documents);
@@ -175,17 +176,17 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     requireFailure([&] { broken.rebuildIndex(documents); }, "blocked rebuild accepted");
     require(!broken.ready() && workingJob().label() == "Failed to load index",
             "failed rebuild became ready");
-    require(read(corrupt) == "{broken", "failed rebuild overwrote the snapshot");
+    require(read(corrupt) == "not a binary index", "failed rebuild overwrote the snapshot");
     fs::remove(corrupt.string() + ".tmp");
     const auto rebuilt = broken.rebuildIndex(documents);
     require(broken.ready() && workingJob().label() == "Ready" && rebuilt.metadata.added == 1 &&
                 broken.search("alpha").size() == 1,
             "rebuild did not replace the damaged snapshot");
-    require(read(corrupt) != "{broken", "rebuild kept the damaged text");
+    require(read(corrupt) != "not a binary index", "rebuild kept the damaged text");
 
     fs::create_directory(documents);
     write(documents / "a.txt", "alpha\n");
-    const auto snapshot = root / "new.json";
+    const auto snapshot = root / "new.bin";
     SearchApplication fresh(snapshot);
     fs::create_directory(snapshot.string() + ".tmp");
     requireFailure([&] { fresh.index(documents); }, "first blocked save accepted");
@@ -197,7 +198,7 @@ void testCorruptionAndFirstSave(const fs::path& root) {
 
 void testRanking(const fs::path& root) {
     const auto documents = root / "documents";
-    const auto snapshot = root / "index.json";
+    const auto snapshot = root / "index.bin";
     fs::create_directories(documents);
     write(documents / "a_top.txt", "red\nred\nred\nblue blue\n");
     write(documents / "b_early.txt", "same\n");
@@ -289,7 +290,7 @@ void testRanking(const fs::path& root) {
 
 void testDefaultTopK(const fs::path& root) {
     const auto documents = root / "documents";
-    const auto snapshot = root / "index.json";
+    const auto snapshot = root / "index.bin";
     fs::create_directories(documents);
     const std::vector<std::pair<std::string, int>> files{
         {"n00.txt", 3}, {"n01.txt", 1}, {"n02.txt", 12}, {"n03.txt", 2},

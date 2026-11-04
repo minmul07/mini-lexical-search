@@ -29,7 +29,7 @@ target_include_directories(mini_lexical_search_domain
 add_library(mini_lexical_search_infrastructure
     src/infrastructure/document_io.cpp
     src/infrastructure/document_json.cpp
-    src/infrastructure/index_json.cpp
+    src/infrastructure/index_binary.cpp
     src/infrastructure/json.cpp
     src/infrastructure/matching_lines.cpp
     src/infrastructure/sha256.cpp)

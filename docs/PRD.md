@@ -220,21 +220,34 @@ documents/
 
 `start`의 기본 경로는 TUI이다. 인덱싱·검색 CLI는 `--no-tui`로 실행하고, 실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 저장하고, 추가·변경된 문서만 줄 단위로 토큰화하여 `tokenCount`를 기록한 뒤 Line-aware Inverted Index에 반영한다. 심볼릭 링크는 제외하고 첫 저장 시 절대 경로순으로 ID를 0부터 부여하며, 이후에는 기존 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`, `--no-tui`는 실행 시 옵션으로 유지한다.
 
-인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.json` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 로드·인덱스 갱신·검색은 `.data/log.log`에 이벤트당 한 줄로 추가한다. 인덱스 단계와 검색의 화면 시간은 마이크로초를 측정해 소수점 셋째 자리 밀리초로 표시한다.
+인덱스 저장 형식은 **바이너리**로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 magic `MLSI`와 version 1, little-endian 고정 폭 정수, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest로 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.bin` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 로드·인덱스 갱신·검색은 `.data/log.log`에 이벤트당 한 줄로 추가한다. 인덱스 단계와 검색의 화면 시간은 마이크로초를 측정해 소수점 셋째 자리 밀리초로 표시한다.
 
-```json
-{
-  "version": 1,
-  "documents": [
-    {"id": 0, "path": "/absolute/path/documents/example.md", "title": "example.md", "tokenCount": 2, "hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
-  ],
-  "invertedIndex": {
-    "자료구조": [
-      {"documentId": 0, "termFrequency": 2, "lines": [1, 4]}
-    ]
-  }
-}
+```text
+magic            4 bytes  "MLSI"
+version          u32      1
+documentCount    u32
+documents:
+  id             u32
+  pathLen        u32
+  path           pathLen bytes (UTF-8)
+  titleLen       u32
+  title          titleLen bytes (UTF-8)
+  tokenCount     u32
+  hashLen        u8       0 또는 32
+  hash           hashLen bytes (raw SHA-256 digest)
+termCount        u32
+terms (byte 순 오름차순):
+  termLen        u32
+  term           termLen bytes (UTF-8)
+  postingCount   u32
+  postings:
+    documentId   u32
+    termFrequency u32
+    lineCount    u32
+    lines        u32 * lineCount
 ```
+
+모든 정수는 little-endian이다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
 
 문서 메타데이터만 다루는 `saveDocuments`/`loadDocuments`와 `.data/documents.json` 배열 형식은 라이브러리 API와 테스트에서 그대로 유지한다.
 
@@ -780,7 +793,7 @@ P0에서 사용한다.
 * TXT / Markdown 문서 읽기
 * 줄 단위 Tokenization과 출처 줄 번호 기록
 * Line-aware Inverted Index 생성
-* Line-aware Inverted Index JSON 저장 / 로드
+* Line-aware Inverted Index 바이너리 저장 / 로드
 * Posting List (`documentId`, `termFrequency`, `lines`)
 * 단일 Keyword Search
 * 문서당 최대 3개의 매칭 줄 출력

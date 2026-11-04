@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    mini_lexical_search::SearchApplication application(".data/index.json");
+    mini_lexical_search::SearchApplication application(".data/index.bin");
     if (noTui) {
         return mini_lexical_search::cli::runRepl(argv[0], application);
     }
