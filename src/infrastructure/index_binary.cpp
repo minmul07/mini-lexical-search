@@ -22,7 +22,7 @@ namespace mini_lexical_search {
 namespace {
 
 constexpr std::string_view kMagic = "MLSI";
-constexpr std::uint32_t kFormatVersion = 2;
+constexpr std::uint32_t kFormatVersion = 3;
 constexpr std::size_t kDigestSize = 32;
 constexpr std::size_t kU32Size = 4;
 constexpr std::size_t kDocumentHeaderSize = 17;
@@ -136,6 +136,16 @@ public:
         fail("unterminated varint");
     }
 
+    // 첫 문서 ID만 0을 허용하며 덧셈 전에 오버플로를 검사한다.
+    std::uint32_t delta(std::uint32_t previous, bool allowZero) {
+        const auto gap = integer();
+        if (!allowZero && gap == 0) fail("zero delta");
+        if (gap > std::numeric_limits<std::uint32_t>::max() - previous) {
+            fail("delta overflow");
+        }
+        return previous + gap;
+    }
+
     std::string string() {
         const auto length = static_cast<std::size_t>(integer());
         if (length > remaining()) fail("truncated string");
@@ -218,12 +228,22 @@ void writeSnapshot(std::ostream& output,
             throw std::runtime_error("index snapshot term disappeared: " + term);
         }
         writeCount(output, postings->size(), "posting");
+        std::uint32_t previousDocument = 0;
+        bool firstDocument = true;
         for (const auto& posting : *postings) {
-            writeVarUint32(output, posting.documentId);
+            if (!firstDocument && posting.documentId <= previousDocument) {
+                throw std::runtime_error("invalid posting document order");
+            }
+            writeVarUint32(output, posting.documentId - previousDocument);
+            previousDocument = posting.documentId;
+            firstDocument = false;
             writeVarUint32(output, posting.termFrequency);
             writeCount(output, posting.lines.size(), "line");
+            std::uint32_t previousLine = 0;
             for (const auto line : posting.lines) {
-                writeVarUint32(output, line);
+                if (line <= previousLine) throw std::runtime_error("invalid posting line order");
+                writeVarUint32(output, line - previousLine);
+                previousLine = line;
             }
         }
     }
@@ -295,14 +315,21 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
             reader.boundedCount(reader.integer(), reader.compressed() ? 3 : kPostingHeaderSize, "posting");
         PostingList list;
         list.reserve(postingCount);
+        std::uint32_t previousDocument = 0;
         for (std::size_t j = 0; j < postingCount; ++j) {
             Posting posting;
-            posting.documentId = reader.integer();
+            posting.documentId = version >= 3 ? reader.delta(previousDocument, j == 0)
+                                              : reader.integer();
+            previousDocument = posting.documentId;
             posting.termFrequency = reader.integer();
             const auto lineCount = reader.boundedCount(reader.integer(), reader.compressed() ? 1 : kU32Size, "line");
             posting.lines.reserve(lineCount);
+            std::uint32_t previousLine = 0;
             for (std::size_t k = 0; k < lineCount; ++k) {
-                posting.lines.push_back(reader.integer());
+                const auto line = version >= 3 ? reader.delta(previousLine, false)
+                                               : reader.integer();
+                posting.lines.push_back(line);
+                previousLine = line;
             }
             list.push_back(std::move(posting));
         }

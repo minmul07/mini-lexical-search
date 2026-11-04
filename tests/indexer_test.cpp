@@ -44,10 +44,11 @@ std::uint8_t hexDigit(char character) {
     return static_cast<std::uint8_t>(character - 'a' + 10);
 }
 
-// index_binary.cpp의 v1/v2 형식을 테스트에서 독립적으로 구성한다.
+// index_binary.cpp의 v1/v2/v3 형식을 테스트에서 독립적으로 구성한다.
 struct SnapshotBytes {
     std::string bytes;
     bool fixed = false;
+    bool delta = false;
 
     void u8(std::uint8_t value) { bytes.push_back(static_cast<char>(value)); }
 
@@ -96,14 +97,19 @@ struct SnapshotBytes {
         u32(documentId);
         u32(termFrequency);
         u32(static_cast<std::uint32_t>(lines.size()));
-        for (const auto line : lines) u32(line);
+        std::uint32_t previous = 0;
+        for (const auto line : lines) {
+            u32(delta ? line - previous : line);
+            previous = line;
+        }
     }
 };
 
-SnapshotBytes snapshotHeader(std::uint32_t documentCount, std::uint32_t version = 2) {
+SnapshotBytes snapshotHeader(std::uint32_t documentCount, std::uint32_t version = 3) {
     SnapshotBytes snapshot;
     snapshot.bytes = "MLSI";
     snapshot.fixed = version == 1;
+    snapshot.delta = version >= 3;
     snapshot.fixed32(version);
     snapshot.u32(documentCount);
     return snapshot;
@@ -384,7 +390,7 @@ int main(int argc, char* argv[]) {
         checkCorrupt("huge_line_count", hugeLines.bytes);
 
         // v1 호환 및 Varint 경계값의 독립 바이트 fixture.
-        for (const auto version : {1u, 2u}) {
+        for (const auto version : {1u, 2u, 3u}) {
             for (const auto value : {0u, 127u, 128u, 16383u, 16384u, 2097151u,
                                      2097152u, 268435455u, 268435456u, 0xffffffffu}) {
                 auto fixture = snapshotHeader(1, version);
@@ -405,11 +411,54 @@ int main(int argc, char* argv[]) {
                         "boundary encoding failed");
             }
         }
-        const std::string header = "MLSI\x02\x00\x00\x00"s;
+        const std::string header = "MLSI\x03\x00\x00\x00"s;
         checkCorrupt("truncated_varint", header + "\x80"s);
         checkCorrupt("overflow_varint", header + "\xff\xff\xff\xff\x10"s);
         checkCorrupt("long_varint", header + "\x80\x80\x80\x80\x80\x00"s);
         checkCorrupt("noncanonical_varint", header + "\x80\x00"s);
+
+        // 각 term과 Posting의 delta 기준값 재설정 및 희소 ID/줄 번호 확인.
+        mini_lexical_search::IndexSnapshot gaps;
+        gaps.documents = {{0, "zero", "zero", 1, ""},
+                          {300, "sparse", "sparse", 1, ""},
+                          {0xffffffffu, "max", "max", 1, ""}};
+        for (const auto* term : {"first", "second"}) {
+            for (const auto id : {0u, 300u, 0xffffffffu}) {
+                for (const auto line : {1000u, 1002u, 1003u, 0xffffffffu}) {
+                    gaps.index.add(term, id, line);
+                }
+            }
+        }
+        const auto gapsPath = root / "gaps.bin";
+        mini_lexical_search::saveIndexSnapshot(gaps.documents, gaps.index, gapsPath);
+        const auto decodedGaps = mini_lexical_search::loadIndexSnapshot(gapsPath);
+        for (const auto* term : {"first", "second"}) {
+            const auto* list = decodedGaps.index.find(term);
+            require(list && list->size() == 3 && list->back().documentId == 0xffffffffu &&
+                        list->front().documentId == 0 && (*list)[1].documentId == 300 &&
+                        (*list)[1].lines == std::vector<std::uint32_t>{1000, 1002, 1003, 0xffffffffu},
+                    "delta reset or sparse round trip failed");
+        }
+        auto overflowLine = snapshotHeader(1);
+        overflowLine.document(0, "a", "a", 2);
+        overflowLine.u32(1); overflowLine.string("a"); overflowLine.u32(1);
+        overflowLine.u32(0); overflowLine.u32(2); overflowLine.u32(2);
+        overflowLine.u32(0xffffffffu); overflowLine.u32(1);
+        checkCorrupt("line_delta_overflow", overflowLine.bytes);
+
+        auto overflowId = snapshotHeader(1);
+        overflowId.document(0xffffffffu, "a", "a", 1);
+        overflowId.u32(1); overflowId.string("a"); overflowId.u32(2);
+        overflowId.posting(0xffffffffu, 1, {1});
+        overflowId.posting(1, 1, {1});
+        checkCorrupt("document_delta_overflow", overflowId.bytes);
+
+        auto duplicateDelta = snapshotHeader(1);
+        duplicateDelta.document(0, "a", "a", 1);
+        duplicateDelta.u32(1); duplicateDelta.string("a"); duplicateDelta.u32(2);
+        duplicateDelta.posting(0, 1, {1});
+        duplicateDelta.posting(0, 1, {1});
+        checkCorrupt("zero_document_delta", duplicateDelta.bytes);
 
         std::cout << "indexer_test passed\n";
         return 0;
