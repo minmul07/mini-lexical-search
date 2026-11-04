@@ -44,11 +44,9 @@ std::uint8_t hexDigit(char character) {
     return static_cast<std::uint8_t>(character - 'a' + 10);
 }
 
-// index_binary.cpp의 v1/v2/v3 형식을 테스트에서 독립적으로 구성한다.
+// index_binary.cpp의 현재 Varint + Delta 형식을 테스트에서 독립적으로 구성한다.
 struct SnapshotBytes {
     std::string bytes;
-    bool fixed = false;
-    bool delta = false;
 
     void u8(std::uint8_t value) { bytes.push_back(static_cast<char>(value)); }
 
@@ -59,7 +57,6 @@ struct SnapshotBytes {
     }
 
     void u32(std::uint32_t value) {
-        if (fixed) { fixed32(value); return; }
         do {
             const auto payload = static_cast<std::uint8_t>(value & 127u);
             value >>= 7;
@@ -99,18 +96,16 @@ struct SnapshotBytes {
         u32(static_cast<std::uint32_t>(lines.size()));
         std::uint32_t previous = 0;
         for (const auto line : lines) {
-            u32(delta ? line - previous : line);
+            u32(line - previous);
             previous = line;
         }
     }
 };
 
-SnapshotBytes snapshotHeader(std::uint32_t documentCount, std::uint32_t version = 3) {
+SnapshotBytes snapshotHeader(std::uint32_t documentCount) {
     SnapshotBytes snapshot;
     snapshot.bytes = "MLSI";
-    snapshot.fixed = version == 1;
-    snapshot.delta = version >= 3;
-    snapshot.fixed32(version);
+    snapshot.fixed32(3);
     snapshot.u32(documentCount);
     return snapshot;
 }
@@ -389,27 +384,40 @@ int main(int argc, char* argv[]) {
         hugeLines.u32(0xffffffffu);
         checkCorrupt("huge_line_count", hugeLines.bytes);
 
-        // v1 호환 및 Varint 경계값의 독립 바이트 fixture.
-        for (const auto version : {1u, 2u, 3u}) {
-            for (const auto value : {0u, 127u, 128u, 16383u, 16384u, 2097151u,
-                                     2097152u, 268435455u, 268435456u, 0xffffffffu}) {
-                auto fixture = snapshotHeader(1, version);
-                fixture.document(value, "boundary", "boundary", value);
-                fixture.u32(1);
-                fixture.string("term");
-                fixture.u32(1);
-                fixture.posting(value, 0xffffffffu, {1, 128, 16384, 0xffffffffu});
-                const auto path = root / "boundary.bin";
-                std::ofstream(path, std::ios::binary) << fixture.bytes;
-                const auto loaded = mini_lexical_search::loadIndexSnapshot(path);
-                require(loaded.documents[0].id == value && loaded.documents[0].tokenCount == value &&
-                            loaded.index.find("term")->front().lines.back() == 0xffffffffu,
-                        "boundary or legacy decoding failed");
-                mini_lexical_search::saveIndexSnapshot(loaded.documents, loaded.index, path);
-                const auto roundTrip = mini_lexical_search::loadIndexSnapshot(path);
-                require(roundTrip.index.find("term")->front().termFrequency == 0xffffffffu,
-                        "boundary encoding failed");
+        // 이전 형식과 알 수 없는 버전은 payload 파싱 전에 거부한다.
+        for (const auto unsupported : {0u, 1u, 2u, 4u, 0xffffffffu}) {
+            SnapshotBytes fixture;
+            fixture.bytes = "MLSI";
+            fixture.fixed32(unsupported);
+            if (unsupported == 1) {
+                fixture.fixed32(0);
+                fixture.fixed32(0);
+            } else {
+                fixture.u32(0);
+                fixture.u32(0);
             }
+            checkCorrupt("unsupported_version_" + std::to_string(unsupported), fixture.bytes);
+        }
+
+        // Varint 경계값의 독립 바이트 fixture.
+        for (const auto value : {0u, 127u, 128u, 16383u, 16384u, 2097151u,
+                                 2097152u, 268435455u, 268435456u, 0xffffffffu}) {
+            auto fixture = snapshotHeader(1);
+            fixture.document(value, "boundary", "boundary", value);
+            fixture.u32(1);
+            fixture.string("term");
+            fixture.u32(1);
+            fixture.posting(value, 0xffffffffu, {1, 128, 16384, 0xffffffffu});
+            const auto path = root / "boundary.bin";
+            std::ofstream(path, std::ios::binary) << fixture.bytes;
+            const auto loaded = mini_lexical_search::loadIndexSnapshot(path);
+            require(loaded.documents[0].id == value && loaded.documents[0].tokenCount == value &&
+                        loaded.index.find("term")->front().lines.back() == 0xffffffffu,
+                    "boundary decoding failed");
+            mini_lexical_search::saveIndexSnapshot(loaded.documents, loaded.index, path);
+            const auto roundTrip = mini_lexical_search::loadIndexSnapshot(path);
+            require(roundTrip.index.find("term")->front().termFrequency == 0xffffffffu,
+                    "boundary encoding failed");
         }
         const std::string header = "MLSI\x03\x00\x00\x00"s;
         checkCorrupt("truncated_varint", header + "\x80"s);

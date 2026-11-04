@@ -247,7 +247,7 @@ terms (byte 순 오름차순):
     lineGaps     varuint32 * lineCount (첫 줄 번호는 절댓값)
 ```
 
-version은 고정 4바이트 little-endian이며, 이후 u32 필드는 unsigned Base-128 Varint(1~5바이트)이다. `hashLen`은 기존 u8을 유지한다. v1 고정 폭·v2 Varint 스냅샷도 읽으며 새 저장은 v3를 사용한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 변경 없는 인덱싱은 기존 파일을 재저장하지 않는다. Varint의 잘림·오버플로·최소 길이가 아닌 표현은 거부한다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
+version은 고정 4바이트 little-endian이며, 이후 u32 필드는 unsigned Base-128 Varint(1~5바이트)이다. `hashLen`은 기존 u8을 유지한다. 읽기와 저장 모두 version 3의 Varint + Delta 형식만 지원한다. v1·v2 스냅샷은 거부하며, 기존 파일을 백업·제거한 뒤 `/index`로 다시 구축하거나 시작 시 재생성을 선택한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 변경 없는 인덱싱은 기존 파일을 재저장하지 않는다. Varint의 잘림·오버플로·최소 길이가 아닌 표현은 거부한다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
 
 문서 메타데이터만 다루는 `saveDocuments`/`loadDocuments`와 `.data/documents.json` 배열 형식은 라이브러리 API와 테스트에서 그대로 유지한다.
 

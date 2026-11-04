@@ -25,9 +25,9 @@ constexpr std::string_view kMagic = "MLSI";
 constexpr std::uint32_t kFormatVersion = 3;
 constexpr std::size_t kDigestSize = 32;
 constexpr std::size_t kU32Size = 4;
-constexpr std::size_t kDocumentHeaderSize = 17;
-constexpr std::size_t kTermHeaderSize = 8;
-constexpr std::size_t kPostingHeaderSize = 12;
+constexpr std::size_t kDocumentHeaderSize = 5;
+constexpr std::size_t kTermHeaderSize = 2;
+constexpr std::size_t kPostingHeaderSize = 3;
 
 void writeU8(std::ostream& output, std::uint8_t value) {
     output.put(static_cast<char>(value));
@@ -117,12 +117,7 @@ public:
         return value;
     }
 
-    void setVersion(std::uint32_t version) { version_ = version; }
-
-    bool compressed() const { return version_ >= 2; }
-
-    std::uint32_t integer() {
-        if (!compressed()) return u32();
+    std::uint32_t varUint32() {
         std::uint32_t value = 0;
         for (unsigned i = 0; i < 5; ++i) {
             const auto byte = u8();
@@ -138,7 +133,7 @@ public:
 
     // 첫 문서 ID만 0을 허용하며 덧셈 전에 오버플로를 검사한다.
     std::uint32_t delta(std::uint32_t previous, bool allowZero) {
-        const auto gap = integer();
+        const auto gap = varUint32();
         if (!allowZero && gap == 0) fail("zero delta");
         if (gap > std::numeric_limits<std::uint32_t>::max() - previous) {
             fail("delta overflow");
@@ -147,7 +142,7 @@ public:
     }
 
     std::string string() {
-        const auto length = static_cast<std::size_t>(integer());
+        const auto length = static_cast<std::size_t>(varUint32());
         if (length > remaining()) fail("truncated string");
         std::string value = data_.substr(position_, length);
         position_ += length;
@@ -189,7 +184,6 @@ private:
 
     std::string data_;
     std::size_t position_ = 0;
-    std::uint32_t version_ = 1;
 };
 
 void writeSnapshot(std::ostream& output,
@@ -267,14 +261,13 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     BinaryReader reader(std::move(bytes));
     reader.expectMagic(kMagic);
     const auto version = reader.u32();
-    if (version < 1 || version > kFormatVersion) {
+    if (version != kFormatVersion) {
         reader.fail("unsupported version: " + std::to_string(version));
     }
 
-    reader.setVersion(version);
     IndexSnapshot snapshot;
     const auto documentCount =
-        reader.boundedCount(reader.integer(), reader.compressed() ? 5 : kDocumentHeaderSize, "document");
+        reader.boundedCount(reader.varUint32(), kDocumentHeaderSize, "document");
     snapshot.documents.reserve(documentCount);
     std::unordered_set<DocumentId> documentIds;
     std::unordered_set<std::string> documentPaths;
@@ -282,10 +275,10 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     documentPaths.reserve(documentCount);
     for (std::size_t i = 0; i < documentCount; ++i) {
         Document document{};
-        document.id = reader.integer();
+        document.id = reader.varUint32();
         document.path = reader.string();
         document.title = reader.string();
-        document.tokenCount = reader.integer();
+        document.tokenCount = reader.varUint32();
         const auto hashLength = reader.u8();
         if (hashLength == 0) {
             document.hash.clear();
@@ -306,28 +299,26 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
         snapshot.documents.push_back(std::move(document));
     }
 
-    const auto termCount = reader.boundedCount(reader.integer(), reader.compressed() ? 2 : kTermHeaderSize, "term");
+    const auto termCount = reader.boundedCount(reader.varUint32(), kTermHeaderSize, "term");
     std::unordered_map<std::string, PostingList> postings;
     postings.reserve(termCount);
     for (std::size_t i = 0; i < termCount; ++i) {
         auto term = reader.string();
         const auto postingCount =
-            reader.boundedCount(reader.integer(), reader.compressed() ? 3 : kPostingHeaderSize, "posting");
+            reader.boundedCount(reader.varUint32(), kPostingHeaderSize, "posting");
         PostingList list;
         list.reserve(postingCount);
         std::uint32_t previousDocument = 0;
         for (std::size_t j = 0; j < postingCount; ++j) {
             Posting posting;
-            posting.documentId = version >= 3 ? reader.delta(previousDocument, j == 0)
-                                              : reader.integer();
+            posting.documentId = reader.delta(previousDocument, j == 0);
             previousDocument = posting.documentId;
-            posting.termFrequency = reader.integer();
-            const auto lineCount = reader.boundedCount(reader.integer(), reader.compressed() ? 1 : kU32Size, "line");
+            posting.termFrequency = reader.varUint32();
+            const auto lineCount = reader.boundedCount(reader.varUint32(), 1, "line");
             posting.lines.reserve(lineCount);
             std::uint32_t previousLine = 0;
             for (std::size_t k = 0; k < lineCount; ++k) {
-                const auto line = version >= 3 ? reader.delta(previousLine, false)
-                                               : reader.integer();
+                const auto line = reader.delta(previousLine, false);
                 posting.lines.push_back(line);
                 previousLine = line;
             }

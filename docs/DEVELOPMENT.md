@@ -139,7 +139,7 @@ CLI → Application → Infrastructure → Domain 방향으로 연결하며 Appl
 
 `src/application/indexer.cpp`는 인덱싱 파이프라인을 담당한다. `applyIndexWork`는 변경 문서를 임시 인덱스에 토큰화한 뒤 성공하면 기존 Posting을 제거하고 병합하므로, 파일 읽기 실패 시 메모리 인덱스를 바꾸지 않는다. `commitIndexSnapshot`은 새 문서 테이블과 인덱스를 저장하고 성공한 뒤 메모리 스냅샷을 교체하며, 저장 실패 시 마지막으로 저장된 상태를 다시 로드해 메모리와 파일을 일치시킨다. `updateIndexSnapshot`은 전체 파이프라인을 묶은 함수로 테스트에서 사용한다.
 
-`src/infrastructure/index_binary.cpp`는 `.data/index.bin` 스냅샷의 바이너리 직렬화·파싱을 담당한다. magic `MLSI`와 version 3, 헤더 뒤 unsigned Base-128 Varint 정수, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest로 구성된다. term은 정렬해 저장하고, 문서 ID·경로 중복, term 중복, 문서 ID 참조, Posting 정렬·줄 번호·TF 불변식, 잘린 데이터·trailing byte를 검증한다. v1 고정 폭·v2 Varint 스냅샷도 읽으며 새 저장은 v3를 사용한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 잘리거나 범위를 초과하거나 최소 길이가 아닌 Varint를 포함한 손상 데이터는 거부한다.
+`src/infrastructure/index_binary.cpp`는 `.data/index.bin` 스냅샷의 바이너리 직렬화·파싱을 담당한다. magic `MLSI`와 version 3, 헤더 뒤 unsigned Base-128 Varint 정수, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest로 구성된다. term은 정렬해 저장하고, 문서 ID·경로 중복, term 중복, 문서 ID 참조, Posting 정렬·줄 번호·TF 불변식, 잘린 데이터·trailing byte를 검증한다. 읽기와 저장 모두 version 3의 Varint + Delta 형식만 지원한다. v1·v2 스냅샷은 거부하며, 기존 파일을 백업·제거한 뒤 `/index`로 다시 구축하거나 시작 시 재생성을 선택한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 잘리거나 범위를 초과하거나 최소 길이가 아닌 Varint를 포함한 손상 데이터는 거부한다.
 
 `src/infrastructure/json.cpp`와 `src/infrastructure/json_internal.hpp`는 문서 테이블 JSON 파서·직렬화기와, 임시 디렉터리를 거쳐 교체하는 원자적 파일 저장을 제공한다. 원자적 저장은 바이너리 인덱스에도 사용한다.
 
