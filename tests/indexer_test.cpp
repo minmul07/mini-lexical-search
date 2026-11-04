@@ -12,6 +12,7 @@
 #include "mini_lexical_search/application/indexer.hpp"
 
 namespace fs = std::filesystem;
+using namespace std::string_literals;
 
 void require(bool condition, const std::string& message) {
     if (!condition) {
@@ -43,16 +44,26 @@ std::uint8_t hexDigit(char character) {
     return static_cast<std::uint8_t>(character - 'a' + 10);
 }
 
-// index_binary.cpp의 v1 형식을 테스트에서 독립적으로 구성한다.
+// index_binary.cpp의 v1/v2 형식을 테스트에서 독립적으로 구성한다.
 struct SnapshotBytes {
     std::string bytes;
+    bool fixed = false;
 
     void u8(std::uint8_t value) { bytes.push_back(static_cast<char>(value)); }
 
-    void u32(std::uint32_t value) {
+    void fixed32(std::uint32_t value) {
         for (int shift = 0; shift < 32; shift += 8) {
             bytes.push_back(static_cast<char>((value >> shift) & 0xffu));
         }
+    }
+
+    void u32(std::uint32_t value) {
+        if (fixed) { fixed32(value); return; }
+        do {
+            const auto payload = static_cast<std::uint8_t>(value & 127u);
+            value >>= 7;
+            u8(static_cast<std::uint8_t>(payload | (value ? 128u : 0u)));
+        } while (value);
     }
 
     void string(const std::string& value) {
@@ -89,10 +100,11 @@ struct SnapshotBytes {
     }
 };
 
-SnapshotBytes snapshotHeader(std::uint32_t documentCount) {
+SnapshotBytes snapshotHeader(std::uint32_t documentCount, std::uint32_t version = 2) {
     SnapshotBytes snapshot;
     snapshot.bytes = "MLSI";
-    snapshot.u32(1);
+    snapshot.fixed = version == 1;
+    snapshot.fixed32(version);
     snapshot.u32(documentCount);
     return snapshot;
 }
@@ -264,7 +276,7 @@ int main(int argc, char* argv[]) {
         checkCorrupt("bad_magic", badMagic.bytes);
 
         auto badVersion = snapshotHeader(0);
-        badVersion.bytes[4] = 2;
+        badVersion.bytes[4] = 99;
         badVersion.u32(0);
         checkCorrupt("bad_version", badVersion.bytes);
 
@@ -370,6 +382,34 @@ int main(int argc, char* argv[]) {
         hugeLines.u32(1);
         hugeLines.u32(0xffffffffu);
         checkCorrupt("huge_line_count", hugeLines.bytes);
+
+        // v1 호환 및 Varint 경계값의 독립 바이트 fixture.
+        for (const auto version : {1u, 2u}) {
+            for (const auto value : {0u, 127u, 128u, 16383u, 16384u, 2097151u,
+                                     2097152u, 268435455u, 268435456u, 0xffffffffu}) {
+                auto fixture = snapshotHeader(1, version);
+                fixture.document(value, "boundary", "boundary", value);
+                fixture.u32(1);
+                fixture.string("term");
+                fixture.u32(1);
+                fixture.posting(value, 0xffffffffu, {1, 128, 16384, 0xffffffffu});
+                const auto path = root / "boundary.bin";
+                std::ofstream(path, std::ios::binary) << fixture.bytes;
+                const auto loaded = mini_lexical_search::loadIndexSnapshot(path);
+                require(loaded.documents[0].id == value && loaded.documents[0].tokenCount == value &&
+                            loaded.index.find("term")->front().lines.back() == 0xffffffffu,
+                        "boundary or legacy decoding failed");
+                mini_lexical_search::saveIndexSnapshot(loaded.documents, loaded.index, path);
+                const auto roundTrip = mini_lexical_search::loadIndexSnapshot(path);
+                require(roundTrip.index.find("term")->front().termFrequency == 0xffffffffu,
+                        "boundary encoding failed");
+            }
+        }
+        const std::string header = "MLSI\x02\x00\x00\x00"s;
+        checkCorrupt("truncated_varint", header + "\x80"s);
+        checkCorrupt("overflow_varint", header + "\xff\xff\xff\xff\x10"s);
+        checkCorrupt("long_varint", header + "\x80\x80\x80\x80\x80\x00"s);
+        checkCorrupt("noncanonical_varint", header + "\x80\x00"s);
 
         std::cout << "indexer_test passed\n";
         return 0;

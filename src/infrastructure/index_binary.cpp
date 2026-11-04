@@ -22,7 +22,7 @@ namespace mini_lexical_search {
 namespace {
 
 constexpr std::string_view kMagic = "MLSI";
-constexpr std::uint32_t kFormatVersion = 1;
+constexpr std::uint32_t kFormatVersion = 2;
 constexpr std::size_t kDigestSize = 32;
 constexpr std::size_t kU32Size = 4;
 constexpr std::size_t kDocumentHeaderSize = 17;
@@ -43,11 +43,20 @@ void writeU32(std::ostream& output, std::uint32_t value) {
     output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
 }
 
+// unsigned Base-128: 하위 7비트부터 기록한다.
+void writeVarUint32(std::ostream& output, std::uint32_t value) {
+    while (value >= 0x80u) {
+        writeU8(output, static_cast<std::uint8_t>((value & 0x7fu) | 0x80u));
+        value >>= 7;
+    }
+    writeU8(output, static_cast<std::uint8_t>(value));
+}
+
 void writeCount(std::ostream& output, std::size_t count, const char* label) {
     if (count > std::numeric_limits<std::uint32_t>::max()) {
         throw std::runtime_error(std::string("index snapshot ") + label + " count is too large");
     }
-    writeU32(output, static_cast<std::uint32_t>(count));
+    writeVarUint32(output, static_cast<std::uint32_t>(count));
 }
 
 void writeString(std::ostream& output, const std::string& value) {
@@ -108,8 +117,27 @@ public:
         return value;
     }
 
+    void setVersion(std::uint32_t version) { version_ = version; }
+
+    bool compressed() const { return version_ >= 2; }
+
+    std::uint32_t integer() {
+        if (!compressed()) return u32();
+        std::uint32_t value = 0;
+        for (unsigned i = 0; i < 5; ++i) {
+            const auto byte = u8();
+            if (i == 4 && (byte & 0xf0u)) fail("varint overflow");
+            value |= static_cast<std::uint32_t>(byte & 0x7fu) << (7 * i);
+            if (!(byte & 0x80u)) {
+                if (i != 0 && byte == 0) fail("non-canonical varint");
+                return value;
+            }
+        }
+        fail("unterminated varint");
+    }
+
     std::string string() {
-        const auto length = static_cast<std::size_t>(u32());
+        const auto length = static_cast<std::size_t>(integer());
         if (length > remaining()) fail("truncated string");
         std::string value = data_.substr(position_, length);
         position_ += length;
@@ -151,6 +179,7 @@ private:
 
     std::string data_;
     std::size_t position_ = 0;
+    std::uint32_t version_ = 1;
 };
 
 void writeSnapshot(std::ostream& output,
@@ -160,10 +189,10 @@ void writeSnapshot(std::ostream& output,
     writeU32(output, kFormatVersion);
     writeCount(output, documents.size(), "document");
     for (const auto& document : documents) {
-        writeU32(output, document.id);
+        writeVarUint32(output, document.id);
         writeString(output, document.path);
         writeString(output, document.title);
-        writeU32(output, document.tokenCount);
+        writeVarUint32(output, document.tokenCount);
         if (document.hash.empty()) {
             writeU8(output, 0);
         } else {
@@ -190,11 +219,11 @@ void writeSnapshot(std::ostream& output,
         }
         writeCount(output, postings->size(), "posting");
         for (const auto& posting : *postings) {
-            writeU32(output, posting.documentId);
-            writeU32(output, posting.termFrequency);
+            writeVarUint32(output, posting.documentId);
+            writeVarUint32(output, posting.termFrequency);
             writeCount(output, posting.lines.size(), "line");
             for (const auto line : posting.lines) {
-                writeU32(output, line);
+                writeVarUint32(output, line);
             }
         }
     }
@@ -218,13 +247,14 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     BinaryReader reader(std::move(bytes));
     reader.expectMagic(kMagic);
     const auto version = reader.u32();
-    if (version != kFormatVersion) {
+    if (version < 1 || version > kFormatVersion) {
         reader.fail("unsupported version: " + std::to_string(version));
     }
 
+    reader.setVersion(version);
     IndexSnapshot snapshot;
     const auto documentCount =
-        reader.boundedCount(reader.u32(), kDocumentHeaderSize, "document");
+        reader.boundedCount(reader.integer(), reader.compressed() ? 5 : kDocumentHeaderSize, "document");
     snapshot.documents.reserve(documentCount);
     std::unordered_set<DocumentId> documentIds;
     std::unordered_set<std::string> documentPaths;
@@ -232,10 +262,10 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     documentPaths.reserve(documentCount);
     for (std::size_t i = 0; i < documentCount; ++i) {
         Document document{};
-        document.id = reader.u32();
+        document.id = reader.integer();
         document.path = reader.string();
         document.title = reader.string();
-        document.tokenCount = reader.u32();
+        document.tokenCount = reader.integer();
         const auto hashLength = reader.u8();
         if (hashLength == 0) {
             document.hash.clear();
@@ -256,23 +286,23 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
         snapshot.documents.push_back(std::move(document));
     }
 
-    const auto termCount = reader.boundedCount(reader.u32(), kTermHeaderSize, "term");
+    const auto termCount = reader.boundedCount(reader.integer(), reader.compressed() ? 2 : kTermHeaderSize, "term");
     std::unordered_map<std::string, PostingList> postings;
     postings.reserve(termCount);
     for (std::size_t i = 0; i < termCount; ++i) {
         auto term = reader.string();
         const auto postingCount =
-            reader.boundedCount(reader.u32(), kPostingHeaderSize, "posting");
+            reader.boundedCount(reader.integer(), reader.compressed() ? 3 : kPostingHeaderSize, "posting");
         PostingList list;
         list.reserve(postingCount);
         for (std::size_t j = 0; j < postingCount; ++j) {
             Posting posting;
-            posting.documentId = reader.u32();
-            posting.termFrequency = reader.u32();
-            const auto lineCount = reader.boundedCount(reader.u32(), kU32Size, "line");
+            posting.documentId = reader.integer();
+            posting.termFrequency = reader.integer();
+            const auto lineCount = reader.boundedCount(reader.integer(), reader.compressed() ? 1 : kU32Size, "line");
             posting.lines.reserve(lineCount);
             for (std::size_t k = 0; k < lineCount; ++k) {
-                posting.lines.push_back(reader.u32());
+                posting.lines.push_back(reader.integer());
             }
             list.push_back(std::move(posting));
         }

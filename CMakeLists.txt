@@ -70,3 +70,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+# 수동 성능 측정용이며 기본 빌드와 CTest에서는 실행하지 않는다.
+add_executable(index_benchmark EXCLUDE_FROM_ALL benchmarks/index_benchmark.cpp)
+target_link_libraries(index_benchmark PRIVATE mini_lexical_search_core)
