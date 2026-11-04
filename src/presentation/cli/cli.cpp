@@ -141,11 +141,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                     const auto& result = results[i];
                     record << ' ' << (i + 1) << " id=" << result.document.id
                            << " score=" << result.score
-                           << " matchingLines=" << result.totalMatchingLines << ' '
-                           << result.document.title << " (" << result.document.path << ')';
-                    for (const auto& match : result.lines) {
-                        record << ' ' << match.number << ':' << match.text;
-                    }
+                           << " matchingLines=" << result.totalMatchingLines;
                 }
                 appendLog(record.str());
                 output << "searched (" << elapsed << " ms)\n";
