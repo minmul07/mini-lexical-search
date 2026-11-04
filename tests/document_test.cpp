@@ -128,7 +128,7 @@ int main(int argc, char* argv[]) {
                                            root / "large.json");
 
         const auto live = root / "live";
-        const auto index = root / "index.json";
+        const auto index = root / "documents.json";
         fs::create_directory(live);
         std::ofstream(live / "a.txt") << "old";
         std::ofstream(live / "b.md") << "delete";

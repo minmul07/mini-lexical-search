@@ -21,6 +21,7 @@ add_library(mini_lexical_search_domain
     src/domain/inverted_index.cpp
     src/domain/query_processor.cpp
     src/domain/tokenizer.cpp
+    src/domain/top_k.cpp
     src/domain/version.cpp)
 target_include_directories(mini_lexical_search_domain
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -28,7 +29,7 @@ target_include_directories(mini_lexical_search_domain
 add_library(mini_lexical_search_infrastructure
     src/infrastructure/document_io.cpp
     src/infrastructure/document_json.cpp
-    src/infrastructure/index_json.cpp
+    src/infrastructure/index_binary.cpp
     src/infrastructure/json.cpp
     src/infrastructure/matching_lines.cpp
     src/infrastructure/sha256.cpp)
@@ -38,6 +39,7 @@ target_link_libraries(mini_lexical_search_infrastructure
 add_library(mini_lexical_search_application
     src/application/documents.cpp
     src/application/indexer.cpp
+    src/application/log.cpp
     src/application/search_application.cpp
     src/application/working_job.cpp)
 target_link_libraries(mini_lexical_search_application
@@ -68,3 +70,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
+
+# 수동 성능 측정용이며 기본 빌드와 CTest에서는 실행하지 않는다.
+add_executable(index_benchmark EXCLUDE_FROM_ALL benchmarks/index_benchmark.cpp)
+target_link_libraries(index_benchmark PRIVATE mini_lexical_search_core)

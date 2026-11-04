@@ -11,6 +11,10 @@ add_executable(query_processor_test query_processor_test.cpp)
 target_link_libraries(query_processor_test PRIVATE mini_lexical_search_domain)
 add_test(NAME query_processor_test COMMAND query_processor_test)
 
+add_executable(top_k_test top_k_test.cpp)
+target_link_libraries(top_k_test PRIVATE mini_lexical_search_domain)
+add_test(NAME top_k_test COMMAND top_k_test)
+
 add_executable(matching_lines_test matching_lines_test.cpp)
 target_link_libraries(matching_lines_test PRIVATE mini_lexical_search_infrastructure)
 add_test(NAME matching_lines_test COMMAND matching_lines_test ${CMAKE_CURRENT_BINARY_DIR}/matching_lines_fixture/test.txt)

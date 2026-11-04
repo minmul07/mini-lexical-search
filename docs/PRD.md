@@ -220,21 +220,34 @@ documents/
 
 `start`의 기본 경로는 TUI이다. 인덱싱·검색 CLI는 `--no-tui`로 실행하고, 실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 저장하고, 추가·변경된 문서만 줄 단위로 토큰화하여 `tokenCount`를 기록한 뒤 Line-aware Inverted Index에 반영한다. 심볼릭 링크는 제외하고 첫 저장 시 절대 경로순으로 ID를 0부터 부여하며, 이후에는 기존 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `/search <검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`, `--no-tui`는 실행 시 옵션으로 유지한다.
 
-인덱스 저장 형식은 **JSON**으로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.json` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다.
+인덱스 저장 형식은 **바이너리**로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 magic `MLSI`와 version 3, 헤더 뒤 unsigned Base-128 Varint 정수, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest로 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.bin` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 로드·인덱스 갱신·검색은 `.data/log.log`에 이벤트당 한 줄로 추가한다. 인덱스 단계와 검색의 화면 시간은 마이크로초를 측정해 소수점 셋째 자리 밀리초로 표시한다.
 
-```json
-{
-  "version": 1,
-  "documents": [
-    {"id": 0, "path": "/absolute/path/documents/example.md", "title": "example.md", "tokenCount": 2, "hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"}
-  ],
-  "invertedIndex": {
-    "자료구조": [
-      {"documentId": 0, "termFrequency": 2, "lines": [1, 4]}
-    ]
-  }
-}
+```text
+magic            4 bytes  "MLSI"
+version          u32      3 (little-endian)
+documentCount    varuint32
+documents:
+  id             varuint32
+  pathLen        varuint32
+  path           pathLen bytes (UTF-8)
+  titleLen       varuint32
+  title          titleLen bytes (UTF-8)
+  tokenCount     varuint32
+  hashLen        u8       0 또는 32
+  hash           hashLen bytes (raw SHA-256 digest)
+termCount        varuint32
+terms (byte 순 오름차순):
+  termLen        varuint32
+  term           termLen bytes (UTF-8)
+  postingCount   varuint32
+  postings:
+    documentIdGap varuint32 (첫 ID는 절댓값)
+    termFrequency varuint32
+    lineCount    varuint32
+    lineGaps     varuint32 * lineCount (첫 줄 번호는 절댓값)
 ```
+
+version은 고정 4바이트 little-endian이며, 이후 u32 필드는 unsigned Base-128 Varint(1~5바이트)이다. `hashLen`은 기존 u8을 유지한다. 읽기와 저장 모두 version 3의 Varint + Delta 형식만 지원한다. v1·v2 스냅샷은 거부하며, 기존 파일을 백업·제거한 뒤 `/index`로 다시 구축하거나 시작 시 재생성을 선택한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 변경 없는 인덱싱은 기존 파일을 재저장하지 않는다. Varint의 잘림·오버플로·최소 길이가 아닌 표현은 거부한다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
 
 문서 메타데이터만 다루는 `saveDocuments`/`loadDocuments`와 `.data/documents.json` 배열 형식은 라이브러리 API와 테스트에서 그대로 유지한다.
 
@@ -499,7 +512,7 @@ Line Numbers
 /search 자료구조 OR 안드로이드
 ```
 
-현재 Phase 1은 조건을 만족하는 모든 문서를 `documentId` 오름차순으로 출력한다. TF 합산 점수는 계산하지만 Ranking 정렬 및 Heap/Top-K는 아직 적용하지 않는다. AND/OR는 이번 단계에 포함한다.
+검색 결과는 TF 합산 점수 내림차순이다. 동점은 `documentId` 오름차순이다. 기본 상위 개수는 10이고, 0이면 빈 결과이며, 후보가 그보다 적으면 모두 반환한다. AND/OR는 이번 단계에 포함한다.
 
 연산자는 정규화 전에 ASCII 공백으로 구분된 대문자 `AND`/`OR`만 인식한다. 각 피연산자는 문서와 동일한 Tokenizer로 정규화하며 정확히 하나의 토큰이어야 한다. 같은 연산자 연결은 지원하고, 혼합 AND/OR·괄호·따옴표·연산자 없는 복수 키워드는 오류로 보고한다. 소문자 `and`/`or`는 일반 검색어이며, 반복된 정규화 검색어는 TF를 한 번만 합산한다.
 
@@ -537,7 +550,7 @@ matchedLines = lines
 
 ## 매칭 줄 출력
 
-Index에는 매칭된 줄을 모두 저장한다. 현재 화면에는 모든 매칭 문서의 모든 매칭 줄을 보여 준다. 비매칭 줄은 출력하지 않는다. 원문 추출 API의 문서당 최대 출력 개수 인자는 기본 `0`이며, `0`이면 무제한, 양수이면 앞 N개 매칭 줄만 추출한다. CLI에서 이 한도를 지정하는 옵션은 후속 작업이다.
+Index에는 매칭된 줄을 모두 저장한다. 화면에는 점수 상위 K개 문서의 매칭 줄을 보여 준다. 기본 K는 10이고, K가 0이면 결과가 없다. 비매칭 줄은 출력하지 않는다. 원문 추출 API의 문서당 최대 출력 개수 인자는 기본 `0`이며, `0`이면 무제한, 양수이면 앞 N개 매칭 줄만 추출한다. CLI에서 이 한도를 지정하는 옵션은 후속 작업이다.
 
 ```cpp
 constexpr size_t MAX_MATCHING_LINES = 0; // 0: 무제한, 양수: 문서당 한도
@@ -554,7 +567,7 @@ constexpr size_t MAX_MATCHING_LINES = 0; // 0: 무제한, 양수: 문서당 한�
 
 줄 순서는 `matchedLines`의 오름차순이다. 양수 한도로 생략된 행이 있을 때만 `+ N more matches`로 표시한다. 위의 생략 표시는 제한을 적용한 출력 예이며, 현재 기본값에서는 모든 매칭 줄을 출력한다.
 
-줄 번호만 저장하고 byte offset은 저장하지 않는다. 현재는 모든 매칭 문서를 한 번씩 다시 열어 처음부터 마지막 요청 줄까지 순차적으로 읽는다. 후속 Top-K 단계가 적용되면 아래처럼 선정된 문서만 읽는다. 파일을 열거나 읽지 못하거나 요청 줄이 없으면 해당 문서에 경고하고 다른 결과는 계속 출력한다. 검색은 스냅샷을 수정하지 않으며 원문 변경을 자동으로 검증하지 않으므로, 인덱싱 후 파일이 변경되면 `/index`로 갱신해야 한다. 손상된 스냅샷을 로드하지 못한 실행에서는 검색도 거부한다.
+줄 번호만 저장하고 byte offset은 저장하지 않는다. Top-K로 선정된 문서만 한 번씩 다시 열어 처음부터 마지막 요청 줄까지 순차적으로 읽는다. 선정에서 빠진 문서는 열지 않는다. 파일을 열거나 읽지 못하거나 요청 줄이 없으면 해당 문서에 경고하고 다른 결과는 계속 출력한다. 읽기에 실패해도 차순위 문서로 바꾸지 않는다. 검색은 스냅샷을 수정하지 않으며 원문 변경을 자동으로 검증하지 않으므로, 인덱싱 후 파일이 변경되면 `/index`로 갱신해야 한다. 손상된 스냅샷을 로드하지 못한 실행에서는 검색도 거부한다.
 
 ```text
 전체 문서 10,000개
@@ -651,6 +664,8 @@ doc1 > doc2 > doc3
 
 AND / OR에서 여러 단어가 매칭되면, P0에서는 매칭된 각 단어의 `termFrequency`를 `SearchCandidate.score`에 합산한다. 이 합은 검색 결과의 점수이고, Index에 저장된 `termFrequency`는 단어별로 유지한다.
 
+동점이면 문서 ID가 작은 결과를 앞에 둔다. 검색은 이 순서로 상위 K개만 반환한다. 기본 K는 10이고, K가 0이면 빈 결과이다.
+
 ---
 
 ## P1 Ranking
@@ -696,7 +711,7 @@ Min Heap (size = K)
 Top-K Results
 ```
 
-Heap은 검색 Index를 저장하는 구조가 아니라 **검색 과정에서 상위 결과를 선택하기 위한 임시 자료구조**로 사용한다. 매칭 줄 원문은 이 Top-K 문서만 다시 열어 순차적으로 읽으며 추출한다.
+Heap은 검색 Index를 저장하는 구조가 아니라 **검색 과정에서 상위 결과를 선택하기 위한 임시 자료구조**로 사용한다. 구현은 `std::priority_queue`를 크기 K의 min heap으로 쓴다. Heap에는 후보의 `matchedLines` 대신 후보 배열 인덱스만 저장하고, 루트는 현재 선택된 후보 중 가장 낮은 순위다. 순위는 점수 내림차순이고 동점은 문서 ID 오름차순이다. 선택 뒤에 그 K개를 같은 순서로 정렬한다. 후보 수를 M이라 하면 선택은 O(M log K), 정렬은 O(K log K), heap의 추가 공간은 O(K)이다. `QueryProcessor`가 만든 전체 후보 배열은 그대로 있으므로 검색 전체의 메모리가 O(K)가 되지는 않는다. 기본 K는 10이다. K가 0이면 결과가 없고, 후보가 K보다 적으면 모두 반환한다. 매칭 줄 원문은 이 Top-K 문서만 다시 열어 순차적으로 읽으며 추출한다. 읽기에 실패한 문서는 경고만 남기고 차순위 문서로 대체하지 않는다.
 
 ---
 
@@ -778,7 +793,7 @@ P0에서 사용한다.
 * TXT / Markdown 문서 읽기
 * 줄 단위 Tokenization과 출처 줄 번호 기록
 * Line-aware Inverted Index 생성
-* Line-aware Inverted Index JSON 저장 / 로드
+* Line-aware Inverted Index 바이너리 저장 / 로드
 * Posting List (`documentId`, `termFrequency`, `lines`)
 * 단일 Keyword Search
 * 문서당 최대 3개의 매칭 줄 출력
