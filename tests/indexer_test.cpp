@@ -75,7 +75,7 @@ struct SnapshotBytes {
                   std::uint32_t tokenCount,
                   const std::string& hash = {}) {
         u32(id);
-        string(path);
+        string("/" + path);
         string(title);
         u32(tokenCount);
         if (hash.empty()) {
@@ -105,7 +105,8 @@ struct SnapshotBytes {
 SnapshotBytes snapshotHeader(std::uint32_t documentCount) {
     SnapshotBytes snapshot;
     snapshot.bytes = "MLSI";
-    snapshot.fixed32(3);
+    snapshot.fixed32(4);
+    snapshot.string("/");
     snapshot.u32(documentCount);
     return snapshot;
 }
@@ -155,7 +156,7 @@ int main(int argc, char* argv[]) {
 
         // The stored file reloads into an equivalent in-memory snapshot.
         const auto reloaded = mini_lexical_search::loadIndexSnapshot(snapshotPath);
-        require(reloaded.documents.size() == 2 &&
+        require(reloaded.root == fs::absolute(docs).lexically_normal() && reloaded.documents.size() == 2 &&
                     reloaded.documents[1].path == snapshot.documents[1].path &&
                     reloaded.documents[1].hash == snapshot.documents[1].hash,
                 "reload must preserve the document table");
@@ -168,9 +169,10 @@ int main(int argc, char* argv[]) {
         // The serialized binary format is deterministic.
         const auto tinyPath = root / "tiny.bin";
         mini_lexical_search::IndexSnapshot tiny;
-        tiny.documents.push_back({0, "a.txt", "a.txt", 1, ""});
+        tiny.root = "/";
+        tiny.documents.push_back({0, "/a.txt", "a.txt", 1, ""});
         tiny.index.add("a", 0, 1);
-        mini_lexical_search::saveIndexSnapshot(tiny.documents, tiny.index, tinyPath);
+        mini_lexical_search::saveIndexSnapshot(tiny, tinyPath);
         auto expected = snapshotHeader(1);
         expected.document(0, "a.txt", "a.txt", 1);
         expected.u32(1);
@@ -179,7 +181,7 @@ int main(int argc, char* argv[]) {
         expected.posting(0, 1, {1});
         require(read(tinyPath) == expected.bytes, "snapshot binary format failed");
 
-        mini_lexical_search::saveIndexSnapshot({}, {}, tinyPath);
+        mini_lexical_search::saveIndexSnapshot({"/", {}, {}}, tinyPath);
         auto emptyExpected = snapshotHeader(0);
         emptyExpected.u32(0);
         require(read(tinyPath) == emptyExpected.bytes, "empty snapshot format failed");
@@ -385,7 +387,7 @@ int main(int argc, char* argv[]) {
         checkCorrupt("huge_line_count", hugeLines.bytes);
 
         // 이전 형식과 알 수 없는 버전은 payload 파싱 전에 거부한다.
-        for (const auto unsupported : {0u, 1u, 2u, 4u, 0xffffffffu}) {
+        for (const auto unsupported : {0u, 1u, 2u, 3u, 5u, 0xffffffffu}) {
             SnapshotBytes fixture;
             fixture.bytes = "MLSI";
             fixture.fixed32(unsupported);
@@ -414,12 +416,12 @@ int main(int argc, char* argv[]) {
             require(loaded.documents[0].id == value && loaded.documents[0].tokenCount == value &&
                         loaded.index.find("term")->front().lines.back() == 0xffffffffu,
                     "boundary decoding failed");
-            mini_lexical_search::saveIndexSnapshot(loaded.documents, loaded.index, path);
+            mini_lexical_search::saveIndexSnapshot(loaded, path);
             const auto roundTrip = mini_lexical_search::loadIndexSnapshot(path);
             require(roundTrip.index.find("term")->front().termFrequency == 0xffffffffu,
                     "boundary encoding failed");
         }
-        const std::string header = "MLSI\x03\x00\x00\x00"s;
+        const std::string header = "MLSI\x04\x00\x00\x00\x01/"s;
         checkCorrupt("truncated_varint", header + "\x80"s);
         checkCorrupt("overflow_varint", header + "\xff\xff\xff\xff\x10"s);
         checkCorrupt("long_varint", header + "\x80\x80\x80\x80\x80\x00"s);
@@ -427,9 +429,10 @@ int main(int argc, char* argv[]) {
 
         // 각 term과 Posting의 delta 기준값 재설정 및 희소 ID/줄 번호 확인.
         mini_lexical_search::IndexSnapshot gaps;
-        gaps.documents = {{0, "zero", "zero", 1, ""},
-                          {300, "sparse", "sparse", 1, ""},
-                          {0xffffffffu, "max", "max", 1, ""}};
+        gaps.root = "/";
+        gaps.documents = {{0, "/zero", "zero", 1, ""},
+                          {300, "/sparse", "sparse", 1, ""},
+                          {0xffffffffu, "/max", "max", 1, ""}};
         for (const auto* term : {"first", "second"}) {
             for (const auto id : {0u, 300u, 0xffffffffu}) {
                 for (const auto line : {1000u, 1002u, 1003u, 0xffffffffu}) {
@@ -438,7 +441,7 @@ int main(int argc, char* argv[]) {
             }
         }
         const auto gapsPath = root / "gaps.bin";
-        mini_lexical_search::saveIndexSnapshot(gaps.documents, gaps.index, gapsPath);
+        mini_lexical_search::saveIndexSnapshot(gaps, gapsPath);
         const auto decodedGaps = mini_lexical_search::loadIndexSnapshot(gapsPath);
         for (const auto* term : {"first", "second"}) {
             const auto* list = decodedGaps.index.find(term);
@@ -467,6 +470,32 @@ int main(int argc, char* argv[]) {
         duplicateDelta.posting(0, 1, {1});
         duplicateDelta.posting(0, 1, {1});
         checkCorrupt("zero_document_delta", duplicateDelta.bytes);
+
+        // Root-only changes (including empty indexes) must be committed and rolled back.
+        const auto emptyA = root / "empty-a", emptyB = root / "empty-b";
+        fs::create_directories(emptyA);
+        fs::create_directories(emptyB);
+        mini_lexical_search::IndexSnapshot empty;
+        const auto emptyPath = root / "empty-root.bin";
+        mini_lexical_search::updateIndexSnapshot(emptyA, empty, emptyPath, tokenizer);
+        require(mini_lexical_search::loadIndexSnapshot(emptyPath).root == emptyA, "empty root not saved");
+        fs::create_directories(emptyPath.string() + ".tmp");
+        requireFailure([&] { mini_lexical_search::updateIndexSnapshot(emptyB, empty, emptyPath, tokenizer); },
+                       "root-only blocked save accepted");
+        require(empty.root == emptyA, "failed root-only update did not roll back root");
+        fs::remove_all(emptyPath.string() + ".tmp");
+        mini_lexical_search::updateIndexSnapshot(emptyB, empty, emptyPath, tokenizer);
+        require(mini_lexical_search::loadIndexSnapshot(emptyPath).root == emptyB, "root-only update lost");
+        auto invalidRoot = snapshotHeader(0);
+        invalidRoot.bytes[9] = '.';
+        invalidRoot.u32(0);
+        checkCorrupt("relative_root", invalidRoot.bytes);
+        auto outside = snapshotHeader(1);
+        // Replace the root string with /inside while keeping /outside as document path.
+        outside.bytes = "MLSI";
+        outside.fixed32(4); outside.string("/inside"); outside.u32(1);
+        outside.document(0, "outside", "outside", 1); outside.u32(0);
+        checkCorrupt("outside_root", outside.bytes);
 
         std::cout << "indexer_test passed\n";
         return 0;

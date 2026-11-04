@@ -8,10 +8,35 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 
 namespace mini_lexical_search::cli {
 namespace {
-constexpr std::size_t kMaxMatchingLines = 0;
+constexpr const char* kSeparator = "=============================";
+
+void writeGroup(std::ostream& output, const SearchResult& result) {
+    output << '[' << result.relativePath << "] "
+           << (result.totalMatchingLines > 10 ? "10+" : std::to_string(result.totalMatchingLines)) << '\n';
+}
+
+void writePage(std::ostream& output, const SearchPage& page) {
+    if (page.files.empty()) {
+        output << "No matches.\n";
+    } else {
+        output << kSeparator << '\n';
+        for (const auto& result : page.files) {
+            writeGroup(output, result);
+            for (const auto& line : result.lines) output << line.number << ": " << line.text << '\n';
+            if (!result.warning.empty()) output << "warning: " << result.warning << '\n';
+            else if (result.lines.size() < result.totalMatchingLines) {
+                output << " > " << result.totalMatchingLines - result.lines.size() << " more\n";
+            }
+        }
+        output << kSeparator << '\n';
+    }
+    output << "Page " << page.number << " | previous: " << (page.hasPrevious ? "yes" : "no")
+           << " | next: " << (page.hasNext ? "yes" : "no") << '\n';
+}
 
 void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
     switch (event.stage) {
@@ -64,7 +89,7 @@ RebuildChoice recreateIndex(SearchApplication& application) {
     }
 }
 
-void writeUsage(std::ostream& output, const char* program) {
+void writeUsage(std::ostream& output, const char* program, OutputMode mode = OutputMode::NoTui) {
     output
         << "Mini Lexical Search " << mini_lexical_search::versionString() << "\n\n"
         << "사용법:\n"
@@ -77,7 +102,10 @@ void writeUsage(std::ostream& output, const char* program) {
         << "  --no-tui       TUI 없이 CLI로 실행\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  /search <검색어>    점수 상위 10개 문서 검색 (동점은 문서 ID순, AND 또는 OR)\n"
+        << "  /search <검색어>    파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
+        << (mode == OutputMode::Tui
+                ? "  /next | /prev      다음·이전 파일 페이지\n  /more <상대 경로>  현재 페이지 파일의 다음 최대 10행 펼치기\n  PgUp | PgDn        출력 영역 스크롤\n"
+                : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }
@@ -89,7 +117,7 @@ void printUsage(const char* program) {
 }
 
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
-                      std::ostream& output) {
+                      std::ostream& output, OutputMode mode) {
     std::istringstream input{std::string(line)};
     std::string command;
     if (!(input >> command)) {
@@ -121,6 +149,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
 
     if (command == "/search") {
         if (arguments.empty()) {
+            application.clearSearch();
             output << "Usage: /search <query>\n";
         } else if (!application.ready()) {
             output << "error: index snapshot is not loaded; fix or remove "
@@ -129,43 +158,66 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
             try {
                 using Clock = std::chrono::steady_clock;
                 const auto started = Clock::now();
-                const auto results = application.search(arguments, kMaxMatchingLines);
-                const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                           Clock::now() - started)
-                                           .count();
-                const auto elapsed = formatElapsedMilliseconds(elapsedUs);
-                std::ostringstream record;
-                record << "search " << arguments << " (" << elapsed << " ms) results="
-                       << results.size();
-                for (std::size_t i = 0; i < results.size(); ++i) {
-                    const auto& result = results[i];
-                    record << ' ' << (i + 1) << " id=" << result.document.id
-                           << " score=" << result.score
-                           << " matchingLines=" << result.totalMatchingLines;
+                std::ostringstream summaries;
+                std::size_t fileCount = 0;
+                const auto summarize = [&](const SearchResult& result) {
+                    summaries << ' ' << ++fileCount << " id=" << result.document.id
+                              << " matchingLines=" << result.totalMatchingLines;
+                };
+                std::string elapsed;
+                const auto writeTime = [&] {
+                    elapsed = formatElapsedMilliseconds(
+                        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started).count());
+                    output << "searched (" << elapsed << " ms)\n";
+                };
+                if (mode == OutputMode::Tui) {
+                    const auto page = application.search(arguments);
+                    writeTime();
+                    for (const auto& result : page.files) summarize(result);
+                    writePage(output, page);
+                } else {
+                    application.visitAllResults(arguments,
+                        [&](const SearchResult& result) {
+                            if (fileCount == 0) {
+                                writeTime();
+                                output << kSeparator << '\n';
+                            }
+                            summarize(result);
+                            writeGroup(output, result);
+                        },
+                        [&](const MatchingLine& match) { output << match.number << ": " << match.text << '\n'; },
+                        [&](const std::string& warning) { output << "warning: " << warning << '\n'; });
+                    if (fileCount == 0) { writeTime(); output << "No matches.\n"; }
+                    else output << kSeparator << '\n';
                 }
-                appendLog(record.str());
-                output << "searched (" << elapsed << " ms)\n";
-                if (results.empty()) output << "No matches.\n";
-                for (std::size_t i = 0; i < results.size(); ++i) {
-                    const auto& result = results[i];
-                    output << i + 1 << ". " << result.document.title << " (" << result.document.path
-                           << ")    score: " << result.score << "\n";
-                    if (!result.warning.empty()) {
-                        output << "   warning: " << result.warning << "\n";
-                        continue;
-                    }
-                    for (const auto& match : result.lines) {
-                        output << "   " << match.number << ": " << match.text << "\n";
-                    }
-                    if (result.lines.size() < result.totalMatchingLines) {
-                        output << "   + " << result.totalMatchingLines - result.lines.size()
-                               << " more matches\n";
-                    }
-                }
+                appendLog("search " + arguments + " (" + elapsed + " ms) results=" +
+                          std::to_string(fileCount) + summaries.str());
             } catch (const std::exception& error) {
                 output << "error: search failed: " << error.what()
                        << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
             }
+        }
+        return LineAction::Ran;
+    }
+    if (command == "/next" || command == "/prev" || command == "/more") {
+        if (mode != OutputMode::Tui) {
+            output << "All results are printed in --no-tui; navigation is only available in TUI.\n";
+            return LineAction::Ran;
+        }
+        try {
+            if (command != "/more" && !arguments.empty()) {
+                throw std::invalid_argument("unexpected arguments for " + command);
+            }
+            if (command == "/more" && arguments.empty()) {
+                throw std::invalid_argument("Usage: /more <relative path>");
+            }
+            const auto page = command == "/next" ? application.nextPage()
+                            : command == "/prev" ? application.previousPage()
+                            : application.expandFile(arguments);
+            writePage(output, page);
+            appendLog("search navigation " + command + " " + arguments + " page=" + std::to_string(page.number));
+        } catch (const std::exception& error) {
+            output << "error: " << error.what() << '\n';
         }
         return LineAction::Ran;
     }
@@ -177,7 +229,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
         if (command == "/exit" || command == "/quit") {
             return LineAction::Quit;
         }
-        writeUsage(output, program);
+        writeUsage(output, program, mode);
         return LineAction::Ran;
     }
     output << "Unknown command: " << line << "\n";

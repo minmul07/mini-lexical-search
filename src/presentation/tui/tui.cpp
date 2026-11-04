@@ -182,6 +182,9 @@ void run(const char* program, SearchApplication& application) {
     std::string content;
     int cursor = 0;
     std::string output;
+    int outputOffset = 0;
+    int outputRows = 1;
+    int outputHeight = 1;
     bool showPrompt = !application.ready();
     std::string promptError;
     bool mouseMode = false;
@@ -282,9 +285,22 @@ void run(const char* program, SearchApplication& application) {
                      ftxui::borderStyled(ftxui::Color::White);
         ftxui::Elements column{std::move(field)};
         const std::string wrapped = wrapOutput(output, width);
+        outputRows = wrapped.empty() ? 0 : lineCount(wrapped);
+        outputHeight = std::max(1, screen.dimy() - lineCount(content) - 5);
+        outputOffset = std::clamp(outputOffset, 0, std::max(0, outputRows - outputHeight));
         if (!wrapped.empty()) {
-            column.push_back(ftxui::text(wrapped) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width) |
-                             ftxui::hcenter);
+            std::istringstream lines(wrapped);
+            ftxui::Elements visible;
+            std::string row;
+            int index = 0;
+            while (std::getline(lines, row)) {
+                if (index >= outputOffset && index < outputOffset + outputHeight) {
+                    visible.push_back(ftxui::text(row));
+                }
+                ++index;
+            }
+            column.push_back(ftxui::vbox(std::move(visible)) |
+                             ftxui::size(ftxui::WIDTH, ftxui::EQUAL, width) | ftxui::hcenter);
         }
         auto status = ftxui::vbox({
             ftxui::text(workingJob().label()) | ftxui::align_right,
@@ -300,16 +316,22 @@ void run(const char* program, SearchApplication& application) {
             screen.Exit();
             return true;
         }
+        if (event == ftxui::Event::PageUp || event == ftxui::Event::PageDown) {
+            outputOffset = std::clamp(outputOffset + (event == ftxui::Event::PageDown ? outputHeight : -outputHeight),
+                                      0, std::max(0, outputRows - outputHeight));
+            return true;
+        }
         if (event == ftxui::Event::Return) {
             const std::string line = logicalText(content);
             content.clear();
             cursor = 0;
             std::ostringstream commandOutput;
-            const auto action = cli::handleLine(program, application, line, commandOutput);
+            const auto action = cli::handleLine(program, application, line, commandOutput, cli::OutputMode::Tui);
             if (action == cli::LineAction::Quit) {
                 screen.Exit();
             } else if (action == cli::LineAction::Ran) {
                 output = commandOutput.str();
+                outputOffset = 0;
             }
             return true;
         }

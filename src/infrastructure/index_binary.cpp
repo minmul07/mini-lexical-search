@@ -22,7 +22,7 @@ namespace mini_lexical_search {
 namespace {
 
 constexpr std::string_view kMagic = "MLSI";
-constexpr std::uint32_t kFormatVersion = 3;
+constexpr std::uint32_t kFormatVersion = 4;
 constexpr std::size_t kDigestSize = 32;
 constexpr std::size_t kU32Size = 4;
 constexpr std::size_t kDocumentHeaderSize = 5;
@@ -187,10 +187,12 @@ private:
 };
 
 void writeSnapshot(std::ostream& output,
-                   const std::vector<Document>& documents,
-                   const InvertedIndex& index) {
+                   const IndexSnapshot& snapshot) {
     output.write(kMagic.data(), static_cast<std::streamsize>(kMagic.size()));
     writeU32(output, kFormatVersion);
+    writeString(output, snapshot.root.generic_string());
+    const auto& documents = snapshot.documents;
+    const auto& index = snapshot.index;
     writeCount(output, documents.size(), "document");
     for (const auto& document : documents) {
         writeVarUint32(output, document.id);
@@ -266,6 +268,10 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     }
 
     IndexSnapshot snapshot;
+    snapshot.root = reader.string();
+    if (!snapshot.root.is_absolute() || snapshot.root != snapshot.root.lexically_normal()) {
+        reader.fail("index root must be a normalized absolute path");
+    }
     const auto documentCount =
         reader.boundedCount(reader.varUint32(), kDocumentHeaderSize, "document");
     snapshot.documents.reserve(documentCount);
@@ -286,6 +292,12 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
             document.hash = toHex(reader.digest());
         } else {
             reader.fail("invalid hash length");
+        }
+        const std::filesystem::path path(document.path);
+        const auto relative = path.lexically_relative(snapshot.root);
+        if (!path.is_absolute() || path != path.lexically_normal() || relative.empty() ||
+            relative == "." || *relative.begin() == "..") {
+            reader.fail("document path is outside index root");
         }
         if (document.path.empty()) {
             reader.fail("empty document path");
@@ -343,11 +355,21 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     return snapshot;
 }
 
-void saveIndexSnapshot(const std::vector<Document>& documents,
-                       const InvertedIndex& index,
+void saveIndexSnapshot(const IndexSnapshot& snapshot,
                        const std::filesystem::path& output) {
+    if (!snapshot.root.is_absolute() || snapshot.root != snapshot.root.lexically_normal()) {
+        throw std::invalid_argument("index root must be a normalized absolute path");
+    }
+    for (const auto& document : snapshot.documents) {
+        const std::filesystem::path path(document.path);
+        const auto relative = path.lexically_relative(snapshot.root);
+        if (!path.is_absolute() || path != path.lexically_normal() || relative.empty() ||
+            relative == "." || *relative.begin() == "..") {
+            throw std::invalid_argument("document path is outside index root");
+        }
+    }
     json::writeFileAtomically(output, [&](std::ostream& stream) {
-        writeSnapshot(stream, documents, index);
+        writeSnapshot(stream, snapshot);
     });
 }
 

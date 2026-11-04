@@ -62,3 +62,8 @@ add_executable(search_application_test search_application_test.cpp)
 target_link_libraries(search_application_test PRIVATE mini_lexical_search_application)
 add_test(NAME search_application_test
     COMMAND search_application_test ${CMAKE_CURRENT_BINARY_DIR}/search_application_fixture)
+
+add_executable(search_commands_test search_commands_test.cpp)
+target_link_libraries(search_commands_test PRIVATE mini_lexical_search_cli)
+add_test(NAME search_commands_test
+    COMMAND search_commands_test ${CMAKE_CURRENT_BINARY_DIR}/search_commands_fixture)

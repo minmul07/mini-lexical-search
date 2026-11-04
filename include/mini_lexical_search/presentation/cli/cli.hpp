@@ -7,6 +7,8 @@
 
 namespace mini_lexical_search::cli {
 
+enum class OutputMode { NoTui, Tui };
+
 enum class LineAction {
     Ignored,
     Ran,
@@ -15,7 +17,7 @@ enum class LineAction {
 
 void printUsage(const char* program);
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
-                      std::ostream& output);
+                      std::ostream& output, OutputMode mode = OutputMode::NoTui);
 int runRepl(const char* program, SearchApplication& application);
 
 }  // namespace mini_lexical_search::cli

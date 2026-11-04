@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -32,11 +33,18 @@ using IndexProgressCallback = std::function<void(const IndexProgress&)>;
 
 struct SearchResult {
     Document document;
-    double score = 0;
+    std::string relativePath;
     std::size_t totalMatchingLines = 0;
     std::vector<MatchingLine> lines;
     // 문서 읽기가 실패해도 다른 결과는 유지한다.
     std::string warning;
+};
+
+struct SearchPage {
+    std::vector<SearchResult> files;
+    std::size_t number = 1;
+    bool hasPrevious = false;
+    bool hasNext = false;
 };
 
 // UI에 독립적인 동기식 검색 세션이다. 로드된 역색인과 tokenizer를 소유한다.
@@ -44,6 +52,7 @@ struct SearchResult {
 class SearchApplication {
 public:
     explicit SearchApplication(std::filesystem::path snapshotPath);
+    ~SearchApplication();
 
     bool ready() const;
     const std::string& loadError() const;
@@ -59,16 +68,30 @@ public:
     IndexUpdate rebuildIndex(const std::filesystem::path& directory,
                              const IndexProgressCallback& progress = {});
 
-    // 점수 내림차순으로 상위 topK개를 반환한다. 동점은 문서 ID 오름차순이다.
-    // topK가 0이면 빈 결과이다. maxMatchingLines가 0이면 모든 매칭 줄을 포함한다.
-    // 매칭 줄 원문은 선정된 문서만 읽는다. 읽기 실패는 그 결과의 경고로 남긴다.
-    // 초기 로드 실패 또는 잘못된 질의 시 예외를 던진다. snapshot을 저장하지 않는다.
-    std::vector<SearchResult> search(const std::string& query,
-                                     std::size_t maxMatchingLines = 0,
-                                     std::size_t topK = 10);
+    // 파일 추가 전 50행을 확인하고 파일마다 처음 최대 10행을 표시한다.
+    SearchPage search(const std::string& query);
+    // 새 검색/인덱싱은 이전 세션을 지운다. 빈 검색 입력도 명시적으로 지울 수 있다.
+    void clearSearch();
+    SearchPage currentPage() const;
+    SearchPage nextPage();
+    SearchPage previousPage();
+    SearchPage expandFile(const std::string& relativePath);
+
+    // 동기적으로 호출하며 콜백에서 앱을 재호출하거나 동시에 접근하지 않는다.
+    // 원문을 캐시하지 않는 전체 출력. 콜백 예외는 호출자에게 전달한다.
+    // group은 파일당 한 번, line은 매칭 행당 한 번, warning은 읽기 실패 시 호출한다.
+    void visitAllResults(const std::string& query,
+                         const std::function<void(const SearchResult&)>& group,
+                         const std::function<void(const MatchingLine&)>& line,
+                         const std::function<void(const std::string&)>& warning);
 
 private:
     void requireReady() const;
+    void requireSearch() const;
+    struct Session;
+    std::unique_ptr<Session> session_;
+    void startSearch(const std::string& query);
+    void addPage();
 
     std::filesystem::path snapshotPath_;
     IndexSnapshot snapshot_;

@@ -34,6 +34,29 @@ int main(int argc, char** argv) {
             catch (const std::exception&) { failed = true; }
             require(failed);
         }
+        MatchingReadPosition position;
+        const std::vector<std::uint32_t> sparse{1, 3, 5};
+        std::size_t cursor = 0;
+        std::vector<MatchingLine> resumed;
+        auto source = [&]() -> std::uint32_t { return cursor < sparse.size() ? sparse[cursor++] : 0; };
+        auto sink = [&](const MatchingLine& line) { resumed.push_back(line); };
+        require(readMatchingLineRange(document, position, source, 1, sink).empty());
+        require(position.line == 1 && position.offset == 5);
+        require(readMatchingLineRange(document, position, source, 1, sink).empty());
+        require(position.line == 3 && resumed.back().text == "three");
+        require(readMatchingLineRange(document, position, source, 10, sink).empty());
+        require(resumed.size() == 3 && resumed.back().text == "five" && position.line == 5);
+        MatchingReadPosition missing;
+        std::uint32_t target = 6;
+        require(readMatchingLineRange(document, missing, [&] { return target; }, 1, sink)
+                    .find("indexed lines are missing") != std::string::npos);
+        MatchingReadPosition throwing;
+        bool sinkFailed = false;
+        try {
+            readMatchingLineRange(document, throwing, [] { return 1u; }, 1,
+                [](const MatchingLine&) { throw std::runtime_error("sink"); });
+        } catch (const std::runtime_error& error) { sinkFailed = std::string(error.what()) == "sink"; }
+        require(sinkFailed);
         std::filesystem::remove(path);
         require(readMatchingLines(document, {}).empty());
         bool failed = false;

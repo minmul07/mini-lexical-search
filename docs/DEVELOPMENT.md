@@ -41,6 +41,8 @@ ctest --test-dir build --output-on-failure
 | --- | --- |
 | `/index [디렉터리]` | 문서 수집 및 인덱스 갱신. 기본 경로는 `./documents` |
 | `/search <검색어>` | 단일 키워드 또는 대문자 AND/OR 검색 |
+| `/next`, `/prev` | TUI의 다음·이전 파일 페이지 |
+| `/more <상대 경로>` | TUI 현재 페이지 파일의 다음 최대 10행 펼치기 |
 | `/help` | 명령 도움말 |
 | `/exit`, `/quit` | 종료 |
 
@@ -61,15 +63,21 @@ TUI와 CLI는 같은 명령 처리를 공유한다. 화면과 입력 규칙은 [
 | `src/presentation/cli/` | 공통 명령 처리와 CLI 입출력 |
 | `src/presentation/tui/` | FTXUI 화면·입력, CLI 명령 처리 호출 |
 | `tests/` | CTest 기반 자동 테스트 |
-| `benchmarks/` | 수동 인덱스 성능 측정 |
+| `benchmarks/` | 수동 인덱스·검색 성능 측정 |
 
 Presentation은 Application을 사용하고, Application은 Infrastructure와 Domain을 사용한다.
 Infrastructure는 Domain에 의존하며, Domain은 다른 계층에 의존하지 않는다.
 Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타깃에만 연결한다.
 
 공통 API는 `application/search_application.hpp`의 `SearchApplication`이다.
-`index`는 인덱싱과 단계별 진행 이벤트를, `search`는 문서 정보·점수·매칭 행·읽기 경고를 반환한다.
-진행 콜백에서 앱을 재호출하거나 여러 스레드에서 동시에 접근하지 않는다.
+`index`는 인덱싱과 단계별 진행 이벤트를, `search`는 첫 `SearchPage`를 반환한다.
+`currentPage`, `nextPage`, `previousPage`, `expandFile`은 파일 그룹·전체 건수·읽은 행·경고와 페이지 상태를 제공한다.
+`visitAllResults`는 파일 시작·매칭 행·읽기 경고 콜백으로 전체 결과를 전달하며 원문을 캐시하지 않는다. 콜백 예외는 호출자에게 전달한다.
+`clearSearch` 또는 새 검색·인덱싱 시작은 세션과 Posting 참조를 해제한다. 세션은 Application이 단독 소유한다.
+문서 ID만 먼저 계산·정렬하고, 방문한 파일의 Posting 행을 커서로 병합한다. 전체 후보의 매칭 행 벡터를 복사하지 않는다.
+파일별 전체 행 수를 계산한 뒤 표시할 원문만 읽고, 펼치기는 직전 바이트 위치에서 이어 읽는다. 방문한 페이지의 원문과 펼친 상태는 세션 동안 캐시한다.
+기존 `QueryProcessor::process`와 Top-K는 독립 알고리즘·테스트용으로 유지하며 실제 UI 검색 경로는 `matchingDocuments`를 사용한다.
+진행·검색 콜백에서 앱을 재호출하거나 여러 스레드에서 동시에 접근하지 않는다.
 
 ## 핵심 동작과 주의 사항
 
@@ -80,13 +88,13 @@ Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타
 | 동기화 | `/index`의 입력 디렉터리를 기준으로 전체 목록을 동기화. 파일 이동은 삭제와 추가로 처리 |
 | 토큰화 | ASCII 영숫자와 한글을 유지하고 영문은 소문자로 변환. 나머지 문자와 잘못된 UTF-8은 구분자 |
 | 검색 | 단일 키워드·AND·OR 지원. 혼합 AND/OR, 괄호, 따옴표, 암묵적 연산자는 미지원 |
-| 순위와 출력 | TF 합산 점수 내림차순, 동점은 문서 ID 오름차순. 기본 상위 10개 문서의 전체 매칭 행 출력 |
+| 순서와 출력 | 디렉터리 우선·UTF-8 이름순, 파일 내 줄 번호순. TUI 파일당 초기 10행·50행 사전 확인, no-TUI 전체 출력 |
 | 원문 읽기 | 선정된 문서만 읽으며 실패는 문서별 경고로 반환. 원문 변경은 `/index`로 갱신 필요 |
 | 저장 | 현재 작업 디렉터리의 `.data/index.bin` 사용. 변경이 없으면 재저장하지 않고 실패 시 기존 파일·메모리 상태 보존 |
 | 시작과 복구 | 스냅샷이 없으면 빈 인덱스로 시작. 손상되면 재생성 여부를 묻고, 거절하면 파일을 유지한 채 종료 |
-| 파일 형식 | version 3의 Varint + Delta 형식만 지원. v1·v2는 재구축 필요 |
-| 로그 | `.data/log.log`에 로드·갱신·검색 이벤트 기록. 검색 결과의 제목·경로·원문은 제외하며 로그 실패는 명령 결과에 영향 없음 |
+| 파일 형식 | 인덱싱 루트를 포함하는 version 4의 Varint + Delta 형식만 지원. v1~v3은 재구축 필요 |
+| 로그 | `.data/log.log`에 로드·갱신·검색 이벤트 기록. 검색 요약에는 문서 ID·전체 매칭 행 수를 남기고, 탐색 기록에는 명령·경로·페이지를 남긴다. 원문은 제외하며 로그 실패는 명령 결과에 영향 없음 |
 
 `.data/`에 쓰기 권한이 필요하다. 강제 종료 후 `index.bin.tmp` 디렉터리가 남으면
 실행 중인 저장 작업이 없는지 확인하고 제거한 뒤 재시도한다.
-TUI의 화면 높이를 넘는 출력 처리와 검색 결과 전용 화면은 아직 구현되지 않았다.
+TUI는 PgUp/PgDn으로 출력 영역을 스크롤한다. 펼치기와 페이지 이동의 상세 계약은 [TUI 디자인](TUI_DESIGN.md)을 따른다.

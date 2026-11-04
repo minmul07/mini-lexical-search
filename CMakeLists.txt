@@ -41,6 +41,7 @@ add_library(mini_lexical_search_application
     src/application/indexer.cpp
     src/application/log.cpp
     src/application/search_application.cpp
+    src/application/search_session.cpp
     src/application/working_job.cpp)
 target_link_libraries(mini_lexical_search_application
     PUBLIC mini_lexical_search_domain
@@ -74,3 +75,6 @@ endif()
 # 수동 성능 측정용이며 기본 빌드와 CTest에서는 실행하지 않는다.
 add_executable(index_benchmark EXCLUDE_FROM_ALL benchmarks/index_benchmark.cpp)
 target_link_libraries(index_benchmark PRIVATE mini_lexical_search_core)
+
+add_executable(search_benchmark EXCLUDE_FROM_ALL benchmarks/search_benchmark.cpp)
+target_link_libraries(search_benchmark PRIVATE mini_lexical_search_application)

@@ -16,10 +16,11 @@ TokenizeStats applyIndexWork(IndexWork& work,
                              InvertedIndex& index,
                              Tokenizer& tokenizer);
 
-// 새 문서 테이블과 역색인을 저장한 뒤 `snapshot`을 교체한다.
+// 새 루트·문서 테이블·역색인을 함께 저장한다.
 // 저장 실패 시 메모리 snapshot을 마지막 저장 상태로 복구하고 예외를 다시 던진다.
 // 저장된 상태가 없으면 빈 snapshot으로 복구한다.
 void commitIndexSnapshot(std::vector<Document> documents,
+                         const std::filesystem::path& root,
                          IndexSnapshot& snapshot,
                          const std::filesystem::path& output);
 

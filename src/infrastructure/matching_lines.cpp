@@ -3,8 +3,35 @@
 #include <algorithm>
 #include <fstream>
 #include <stdexcept>
+#include <utility>
 
 namespace mini_lexical_search {
+
+std::string readMatchingLineRange(
+    const Document& document, MatchingReadPosition& position,
+    const std::function<std::uint32_t()>& nextNumber, std::size_t limit,
+    const std::function<void(const MatchingLine&)>& sink) {
+    std::ifstream input(document.path, std::ios::binary);
+    if (!input) return "cannot open " + document.path;
+    input.seekg(position.offset);
+    if (!input) return "cannot seek " + document.path;
+    for (std::size_t emitted = 0; emitted < limit; ++emitted) {
+        const auto target = nextNumber();
+        if (target == 0) return {};
+        if (target <= position.line) throw std::invalid_argument("matching line cursor must advance");
+        std::string text;
+        while (position.line < target) {
+            if (!std::getline(input, text)) {
+                return (input.bad() ? "cannot read " : "indexed lines are missing; run /index again: ") + document.path;
+            }
+            position.offset += static_cast<std::streamoff>(text.size()) + (input.eof() ? 0 : 1);
+            ++position.line;
+        }
+        if (!text.empty() && text.back() == '\r') text.pop_back();
+        sink({target, std::move(text)});
+    }
+    return {};
+}
 
 std::vector<MatchingLine> readMatchingLines(const Document& document,
                                           const std::vector<std::uint32_t>& matchedLines,
