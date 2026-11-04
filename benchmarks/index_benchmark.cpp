@@ -21,11 +21,12 @@ int main(int argc, char** argv) {
         if (argc != 3) throw std::runtime_error("usage: index_benchmark <documents> <new-output.bin>");
         const std::filesystem::path output = argv[2];
         if (std::filesystem::exists(output)) throw std::runtime_error("output must not exist");
-        std::cout << "run,index_ms,save_ms,load_ms,bytes,documents,terms,postings,lines\n";
+        std::cout << "run,index_and_save_ms,save_ms,load_ms,bytes,documents,terms,postings,lines\n";
         for (int run = 0; run <= 7; ++run) {
             IndexSnapshot snapshot;
             SimpleTokenizer tokenizer;
-            const double indexMs = measure([&] { updateIndexSnapshot(argv[1], snapshot, output, tokenizer); });
+            // 전체 인덱싱에는 최초 저장이 포함되며, 아래 saveMs는 같은 스냅샷의 재저장이다.
+            const double indexAndSaveMs = measure([&] { updateIndexSnapshot(argv[1], snapshot, output, tokenizer); });
             const double saveMs = measure([&] { saveIndexSnapshot(snapshot.documents, snapshot.index, output); });
             IndexSnapshot loaded;
             const double loadMs = measure([&] { loaded = loadIndexSnapshot(output); });
@@ -44,7 +45,7 @@ int main(int argc, char** argv) {
                 }
             }
             if (run) std::cout << run << ',' << std::fixed << std::setprecision(3)
-                << indexMs << ',' << saveMs << ',' << loadMs << ',' << std::filesystem::file_size(output)
+                << indexAndSaveMs << ',' << saveMs << ',' << loadMs << ',' << std::filesystem::file_size(output)
                 << ',' << snapshot.documents.size() << ',' << snapshot.index.termCount()
                 << ',' << snapshot.index.postingCount() << ',' << lines << '\n';
             if (run != 7) std::filesystem::remove(output);
