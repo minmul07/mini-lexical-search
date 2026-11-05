@@ -27,14 +27,14 @@ ctest --test-dir build --output-on-failure
 | 매칭 행 | `matching_lines_test` | 원본 줄 번호·줄바꿈, 출력 한도, 잘못된 줄 목록·읽기 실패 |
 | 인덱싱·저장 | `indexer_test` | v4 루트 왕복·구버전 거부·루트 변경·형식 검증, 증분 갱신, 변경 없는 파일 보존, 저장 실패 복구 |
 | 공통 Application | `search_application_test` | 인덱싱·재로드·검색, 진행 이벤트, 파일 트리순·중복 제거·페이지·펼치기, 오류 복구·세션 무효화·상태 라벨 |
-| 검색 명령 | `search_commands_test` | TUI/no-TUI 출력 형식, 파일 건수·more·명령·공백 경로·경계·읽기 경고 |
+| 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 명령, 출력 형식·파일 건수·more·공백 경로·경계·읽기 경고 |
 | CLI 통합 | `cli_test` | 실행 옵션·명령, 실제 저장·재실행, 파일별 전체 출력·시간·로그, 손상 스냅샷·입력 오류 처리 |
 
 ## 수동 확인
 
 | 분야 | 실행 방법 | 핵심 확인 항목 |
 | --- | --- | --- |
-| CLI 대화형 입력 | `./build/mini_lexical_search start --no-tui` | `/index`, 단일·AND·OR `/search`, `/help`, `/exit`의 입력·출력과 종료 |
+| CLI 대화형 입력 | `./build/mini_lexical_search start --no-tui` | `/index`, 단일·AND·OR 검색어, `/help`, `/exit`의 입력·출력과 종료 |
 | TUI 화면·입력 | `./build/mini_lexical_search start` | 입력 상자 줄바꿈, Enter 실행·초기화, 출력 교체, 상태 라벨, 종료 키, `/more`·`/next`·`/prev`, PgUp/PgDn·리사이즈 |
 | TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료 |
 

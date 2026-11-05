@@ -166,7 +166,7 @@ SearchPage SearchApplication::search(const std::string& query) {
 }
 
 void SearchApplication::requireSearch() const {
-    if (!session_ || session_->pages.empty()) throw std::runtime_error("no active search; run /search first");
+    if (!session_ || session_->pages.empty()) throw std::runtime_error("no active search; enter a query first");
 }
 
 SearchPage SearchApplication::currentPage() const {

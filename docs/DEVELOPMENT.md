@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 | 명령 | 동작 |
 | --- | --- |
 | `/index [디렉터리]` | 문서 수집 및 인덱스 갱신. 기본 경로는 `./documents` |
-| `/search <검색어>` | 단일 키워드 또는 대문자 AND/OR 검색 |
+| `<검색어>` | `/` 없이 바로 입력하여 단일 키워드 또는 대문자 AND/OR 검색 |
 | `/next`, `/prev` | TUI의 다음·이전 파일 페이지 |
 | `/more <상대 경로>` | TUI 현재 페이지 파일의 다음 최대 10행 펼치기 |
 | `/help` | 명령 도움말 |
@@ -48,7 +48,7 @@ ctest --test-dir build --output-on-failure
 
 실행 옵션은 `-h`·`--help`, `-v`·`--version`, `start`와 함께 사용하는 `--no-tui`다.
 CLI는 EOF로도 종료하며, TUI는 Esc·Ctrl+C로도 종료한다.
-TUI와 CLI는 같은 명령 처리를 공유한다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다.
+TUI와 CLI는 같은 입력 처리를 공유한다. 빈 입력은 무시하고, `/`로 시작하면 명령으로 처리한다. `/search` 명령은 제거되었으며 알 수 없는 명령으로 처리한다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다.
 
 ## 구조와 역할
 

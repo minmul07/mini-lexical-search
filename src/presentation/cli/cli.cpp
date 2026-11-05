@@ -102,7 +102,7 @@ void writeUsage(std::ostream& output, const char* program, OutputMode mode = Out
         << "  --no-tui       TUI 없이 CLI로 실행\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  /search <검색어>    파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
+        << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
         << (mode == OutputMode::Tui
                 ? "  /next | /prev      다음·이전 파일 페이지\n  /more <상대 경로>  현재 페이지 파일의 다음 최대 10행 펼치기\n  PgUp | PgDn        출력 영역 스크롤\n"
                 : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
@@ -118,6 +118,11 @@ void printUsage(const char* program) {
 
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
                       std::ostream& output, OutputMode mode) {
+    const auto first = line.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string_view::npos) {
+        return LineAction::Ignored;
+    }
+    line = line.substr(first, line.find_last_not_of(" \t\r\n\v\f") - first + 1);
     std::istringstream input{std::string(line)};
     std::string command;
     if (!(input >> command)) {
@@ -147,11 +152,9 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
         return LineAction::Ran;
     }
 
-    if (command == "/search") {
-        if (arguments.empty()) {
-            application.clearSearch();
-            output << "Usage: /search <query>\n";
-        } else if (!application.ready()) {
+    if (command.front() != '/') {
+        const std::string query(line);
+        if (!application.ready()) {
             output << "error: index snapshot is not loaded; fix or remove "
                    << application.snapshotPath().string() << "\n";
         } else {
@@ -171,12 +174,12 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                     output << "searched (" << elapsed << " ms)\n";
                 };
                 if (mode == OutputMode::Tui) {
-                    const auto page = application.search(arguments);
+                    const auto page = application.search(query);
                     writeTime();
                     for (const auto& result : page.files) summarize(result);
                     writePage(output, page);
                 } else {
-                    application.visitAllResults(arguments,
+                    application.visitAllResults(query,
                         [&](const SearchResult& result) {
                             if (fileCount == 0) {
                                 writeTime();
@@ -190,11 +193,11 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                     if (fileCount == 0) { writeTime(); output << "No matches.\n"; }
                     else output << kSeparator << '\n';
                 }
-                appendLog("search " + arguments + " (" + elapsed + " ms) results=" +
+                appendLog("search " + query + " (" + elapsed + " ms) results=" +
                           std::to_string(fileCount) + summaries.str());
             } catch (const std::exception& error) {
                 output << "error: search failed: " << error.what()
-                       << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
+                       << "\nUsage: <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
             }
         }
         return LineAction::Ran;
@@ -248,7 +251,7 @@ int runRepl(const char* program, SearchApplication& application) {
     }
 
     std::cout << "Mini Lexical Search started.\n"
-              << "Type '/help' for commands, '/exit' to quit.\n";
+              << "Type text to search, '/help' for commands, '/exit' to quit.\n";
 
     std::string line;
     while (std::cout << "> " && std::getline(std::cin, line)) {
