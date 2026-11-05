@@ -84,6 +84,18 @@ int main() {
         requireTokens(tokenizer, "\xED\xA0\x80" "x", {"x"},
                       "UTF-8 surrogate encodings must split tokens");
 
+        const std::string source = " Hi,자료구조! A\xFF" "B";
+        const auto spans = tokenizer.tokenizeWithOffsets(source);
+        require(spans.size() == 4, "offset tokenizer must keep delimiter semantics");
+        const auto normalized = tokenizer.tokenize(source);
+        for (std::size_t i = 0; i < spans.size(); ++i) {
+            require(spans[i].normalized == normalized[i], "offset token normalization must match indexing");
+            require(spans[i].begin < spans[i].end && spans[i].end <= source.size(), "token byte range must be valid");
+        }
+        require(spans[0].begin == 1 && spans[0].end == 3, "ASCII range excludes separators");
+        require(source.substr(spans[1].begin, spans[1].end - spans[1].begin) == "자료구조",
+                "Korean range must preserve original UTF-8");
+
         std::cout << "tokenizer_test passed\n";
         return 0;
     } catch (const std::exception& error) {

@@ -75,6 +75,7 @@ public:
     SearchPage currentPage() const;
     SearchPage nextPage();
     SearchPage previousPage();
+    // ./ 등의 상대 경로 표현은 어휘적으로 정규화하여 현재 페이지에서 찾는다.
     SearchPage expandFile(const std::string& relativePath);
 
     // 동기적으로 호출하며 콜백에서 앱을 재호출하거나 동시에 접근하지 않는다.

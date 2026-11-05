@@ -58,6 +58,7 @@ target_link_libraries(mini_lexical_search_cli
     PUBLIC mini_lexical_search_application)
 
 add_library(mini_lexical_search_tui
+    src/presentation/tui/result_view.cpp
     src/presentation/tui/tui.cpp)
 target_include_directories(mini_lexical_search_tui
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

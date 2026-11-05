@@ -47,7 +47,7 @@ ctest --test-dir build --output-on-failure
 | `/exit`, `/quit` | 종료 |
 
 실행 옵션은 `-h`·`--help`, `-v`·`--version`, `start`와 함께 사용하는 `--no-tui`다.
-CLI는 EOF로도 종료하며, TUI는 Esc·Ctrl+C로도 종료한다.
+CLI는 EOF로도 종료하며, TUI는 Ctrl+C로도 종료한다. Esc는 결과·명령 출력에서 검색 세션을 지우고 홈으로 복귀하며, 홈과 복구 팝업에서는 무시한다.
 TUI와 CLI는 같은 입력 처리를 공유한다. 빈 입력은 무시하고, `/`로 시작하면 명령으로 처리한다. `/search` 명령은 제거되었으며 알 수 없는 명령으로 처리한다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다.
 
 ## 구조와 역할
@@ -61,7 +61,7 @@ TUI와 CLI는 같은 입력 처리를 공유한다. 빈 입력은 무시하고, 
 | `src/application/` | `SearchApplication`의 인덱스 상태, 인덱싱·검색 절차, 진행 이벤트·로그 |
 | `src/infrastructure/` | 문서 수집·읽기, SHA-256, JSON·바이너리 저장과 로드 |
 | `src/presentation/cli/` | 공통 명령 처리와 CLI 입출력 |
-| `src/presentation/tui/` | FTXUI 화면·입력, CLI 명령 처리 호출 |
+| `src/presentation/tui/` | FTXUI 화면·입력, 구조화된 명령 결과 표시, 발췌·강조·선택·스크롤 모델 |
 | `tests/` | CTest 기반 자동 테스트 |
 | `benchmarks/` | 수동 인덱스·검색 성능 측정 |
 
@@ -97,4 +97,11 @@ Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타
 
 `.data/`에 쓰기 권한이 필요하다. 강제 종료 후 `index.bin.tmp` 디렉터리가 남으면
 실행 중인 저장 작업이 없는지 확인하고 제거한 뒤 재시도한다.
-TUI는 PgUp/PgDn으로 출력 영역을 스크롤한다. 펼치기와 페이지 이동의 상세 계약은 [TUI 디자인](TUI_DESIGN.md)을 따른다.
+
+공통 명령 처리의 선택적 `CommandFeedback`은 화면 종류·`SearchPage`·실행 검색어·경과 시간을 전달한다. TUI는 CLI 결과 문자열을 파싱하지 않으며, 버튼은 `navigate`에 파일 경로를 그대로 전달한다. 일반 명령·오류는 기존 텍스트 출력을 사용한다.
+
+`SimpleTokenizer::tokenizeWithOffsets`는 정규화 토큰과 원문의 UTF-8 바이트 범위 `[begin, end)`를 반환한다. 기존 `tokenize`와 스캐너를 공유하지만 인덱싱 경로에 위치 벡터를 만들지 않는다.
+
+TUI의 `ResultView`는 홈·검색·명령 출력 상태와 행 키(파일 경로·원본 줄 번호), 발췌·스크롤을 관리한다. 현재 `Terminal::Size()`로 리사이즈를 반영하며 FTXUI 화면은 결과 모델을 렌더링하고 마우스·키보드 이벤트를 전달한다.
+
+TUI는 휠·PgUp/PgDn으로 결과 영역을 스크롤한다. 펼치기와 페이지 이동의 상세 계약은 [TUI 디자인](TUI_DESIGN.md)을 따른다.

@@ -197,10 +197,11 @@ SearchPage SearchApplication::previousPage() {
 
 SearchPage SearchApplication::expandFile(const std::string& relativePath) {
     requireSearch();
+    const auto normalized = std::filesystem::path(relativePath).lexically_normal().generic_string();
     const auto [first, end] = session_->pages[session_->page];
     for (auto i = first; i < end; ++i) {
         auto& file = session_->files[i];
-        if (file.result.relativePath == relativePath) {
+        if (file.result.relativePath == normalized) {
             if (file.result.lines.size() < file.result.totalMatchingLines) {
                 file.read(10, [&](const MatchingLine& line) { file.result.lines.push_back(line); });
             }

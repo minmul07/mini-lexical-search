@@ -18,7 +18,7 @@ ctest --test-dir build --output-on-failure
 | 분야 | 테스트 | 핵심 확인 항목 |
 | --- | --- | --- |
 | 버전 | `version_test` | 버전 문자열 |
-| 토큰화 | `tokenizer_test` | 영숫자·한글 유지, 소문자 변환, 구분자·잘못된 UTF-8 처리 |
+| 토큰화 | `tokenizer_test` | 영숫자·한글 유지, 소문자 변환, 구분자·잘못된 UTF-8 처리·원문 토큰 바이트 범위 |
 | 해시 | `sha256_test` | 표준 벡터, 패딩 경계, 청크 분할과 일괄 해시의 일치 |
 | 문서 처리 | `document_test` | 수집·필터링, JSON 저장·로드, 변경 감지·ID 보존, 변경 문서만 토큰화 |
 | 역색인 | `inverted_index_test` | TF·줄 번호·문서 정렬, 추가·삭제·병합, 불변식 및 실패 시 상태 보존 |
@@ -27,7 +27,8 @@ ctest --test-dir build --output-on-failure
 | 매칭 행 | `matching_lines_test` | 원본 줄 번호·줄바꿈, 출력 한도, 잘못된 줄 목록·읽기 실패 |
 | 인덱싱·저장 | `indexer_test` | v4 루트 왕복·구버전 거부·루트 변경·형식 검증, 증분 갱신, 변경 없는 파일 보존, 저장 실패 복구 |
 | 공통 Application | `search_application_test` | 인덱싱·재로드·검색, 진행 이벤트, 파일 트리순·중복 제거·페이지·펼치기, 오류 복구·세션 무효화·상태 라벨 |
-| 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 명령, 출력 형식·파일 건수·more·공백 경로·경계·읽기 경고 |
+| 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 명령, 출력 형식·파일 건수·more·공백 경로·경계·읽기 경고·구조화된 피드백 |
+| TUI 결과 모델 | `result_view_test` | 1~3줄 발췌·셀 너비·토큰 강조·한글/이모지/결합 문자, 행 선택·스크롤·리사이즈·홈 초기화 |
 | CLI 통합 | `cli_test` | 실행 옵션·명령, 실제 저장·재실행, 파일별 전체 출력·시간·로그, 손상 스냅샷·입력 오류 처리 |
 
 ## 수동 확인
@@ -35,10 +36,11 @@ ctest --test-dir build --output-on-failure
 | 분야 | 실행 방법 | 핵심 확인 항목 |
 | --- | --- | --- |
 | CLI 대화형 입력 | `./build/mini_lexical_search start --no-tui` | `/index`, 단일·AND·OR 검색어, `/help`, `/exit`의 입력·출력과 종료 |
-| TUI 화면·입력 | `./build/mini_lexical_search start` | 입력 상자 줄바꿈, Enter 실행·초기화, 출력 교체, 상태 라벨, 종료 키, `/more`·`/next`·`/prev`, PgUp/PgDn·리사이즈 |
-| TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료 |
+| TUI 화면·입력 | `./build/mini_lexical_search start` | 상단 검색창·실행 검색어 고정, 최대 3줄 입력·발췌·강조, ↑↓로 검색창 마지막 줄↔첫 결과 이동·여러 줄 입력 커서 이동, Tab 무동작, Home/End 결과 선택, 버튼 클릭·Space·Enter 실행, 검색창 Space 공백·Enter 검색, 휠·PgUp/PgDn, 고정 페이지 버튼, 리사이즈 직후 스크롤 |
+| TUI 홈·종료 | 격리된 경로에서 검색 후 Esc 및 재검색 | 홈 복귀 시 입력·페이지·펼침 초기화와 인덱스 유지, 홈 Esc 무동작, `/help` 후 탐색, Ctrl+C·`/exit`·`/quit` 종료와 터미널 복구 |
+| TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료, Esc 무동작 |
 
-TUI 화면은 CTest로 검증하지 않는다. 화면 기준은 [TUI 디자인](TUI_DESIGN.md)을 참고한다.
+TUI 발췌·결과 모델은 CTest로 검증하고, 실제 화면 렌더링·터미널 이벤트는 수동 또는 PTY로 검증한다. 화면 기준은 [TUI 디자인](TUI_DESIGN.md)을 참고한다.
 수동 인덱싱은 현재 작업 디렉터리의 `.data/index.bin`을 갱신하므로 격리된 경로에서 확인한다.
 
 ## 성능 측정

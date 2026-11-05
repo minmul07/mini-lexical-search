@@ -1,9 +1,17 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
 namespace mini_lexical_search {
+
+// [begin, end)는 원문 UTF-8 바이트 범위이며 normalized는 검색용 토큰이다.
+struct TokenSpan {
+    std::string normalized;
+    std::size_t begin;
+    std::size_t end;
+};
 
 // 한 줄의 텍스트를 검색 가능한 토큰으로 분리한다.
 // 줄 번호는 파일을 읽는 호출자가 붙이므로 tokenizer는 줄 번호를 받지 않는다.
@@ -21,6 +29,7 @@ public:
 class SimpleTokenizer final : public Tokenizer {
 public:
     std::vector<std::string> tokenize(const std::string& text) override;
+    std::vector<TokenSpan> tokenizeWithOffsets(const std::string& text);
 };
 
 }  // namespace mini_lexical_search

@@ -100,6 +100,41 @@ int main(int argc, char** argv) {
         require(output.find("[0 space.txt] 10+\nwarning: cannot open") != std::string::npos &&
                 output.find(" > 21 more") == std::string::npos && output.find("[1 space.txt] 10") != std::string::npos,
                 "warning retried or hid subsequent files");
+        // Structured feedback drives TUI without parsing the CLI representation.
+        {
+            std::ofstream leading(root / "docs/ leading.txt");
+            for (int row = 0; row < 21; ++row) leading << "hit\n";
+        }
+        app.index(root / "docs");
+        cli::CommandFeedback feedback;
+        std::ostringstream stream;
+        cli::handleLine("test", app, " hit ", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.display == cli::Display::Results && feedback.newSearch && feedback.query == "hit" &&
+                !feedback.elapsed.empty() && feedback.page && feedback.page->files[0].relativePath == " leading.txt",
+                "structured search feedback incomplete");
+        cli::navigate(app, cli::Navigation::More, " leading.txt", stream, &feedback);
+        require(feedback.page && feedback.page->files[0].lines.size() == 20 && !feedback.newSearch,
+                "button navigation stripped significant leading whitespace");
+        cli::handleLine("test", app, "/more ./ leading.txt", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.page && feedback.page->files[0].lines.size() == 21,
+                "explicit relative path did not expand leading-whitespace file");
+        cli::handleLine("test", app, "/help", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.display == cli::Display::Text && !feedback.page && !feedback.newSearch,
+                "help left stale search feedback");
+        cli::handleLine("test", app, "/prev", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.display == cli::Display::Results && feedback.page->files[0].lines.size() == 21,
+                "help should preserve expandable search session");
+        cli::handleLine("test", app, " ", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.display == cli::Display::Unchanged && !feedback.page, "ignored input has stale feedback");
+        app.clearSearch(); // Esc home action.
+        require(app.ready(), "home must retain the index");
+        cli::handleLine("test", app, "/next", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.display == cli::Display::Text && !feedback.page, "home retained pageable results");
+        cli::handleLine("test", app, "hit", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.page && feedback.page->files[0].lines.size() == 10, "search after home retained expansion");
+        cli::handleLine("test", app, "hit 자료구조", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.newSearch && feedback.query == "hit 자료구조" &&
+                feedback.display == cli::Display::Text && !feedback.page, "failed search feedback incomplete");
         fs::remove_all(root);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
