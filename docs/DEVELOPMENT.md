@@ -12,6 +12,7 @@
 
 현재는 CMake 빌드를 지원하며, 제출용 `make` 단일 명령 빌드는 아직 구현되지 않았다.
 FTXUI 7.0.3 소스는 `third_party/ftxui/`에 포함되어 있다.
+번들 소스에는 이모지 조합의 커서 이동·셀 너비·렌더링 경계를 통일하고 전각 문자 뒤 결합 부호를 보존하는 로컬 패치가 있다. FTXUI 교체 시 이 패치와 `tui_input_test`를 함께 확인한다.
 상세 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 참고한다.
 
 ## 빌드와 검증
@@ -101,5 +102,6 @@ Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타
 `SimpleTokenizer::tokenizeWithOffsets`는 정규화 토큰과 원문의 UTF-8 바이트 범위 `[begin, end)`를 반환한다. 기존 `tokenize`와 스캐너를 공유하지만 인덱싱 경로에 위치 벡터를 만들지 않는다.
 
 TUI의 `ResultView`는 홈·검색·명령 출력 상태와 행 키(파일 경로·원본 줄 번호), 발췌·스크롤을 관리한다. 현재 `Terminal::Size()`로 리사이즈를 반영하며 FTXUI 화면은 결과 모델을 렌더링하고 마우스·키보드 이벤트를 전달한다.
+`input_layout`은 같은 표시 글리프 경계로 검색창을 줄바꿈하며 원문 기준 커서 바이트 위치와 줄바꿈 앞·뒤 위치를 보존한다. 삭제 시에는 화면 줄바꿈을 건너뛰고 원문 글리프를 지운다.
 
 TUI는 휠·PgUp/PgDn으로 결과 영역을 스크롤한다. 펼치기와 페이지 이동의 상세 계약은 [TUI 디자인](TUI_DESIGN.md)을 따른다.

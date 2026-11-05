@@ -77,22 +77,10 @@ std::vector<PreviewRow> pack(const std::vector<Glyph>& units, std::size_t begin,
 
 std::vector<std::string> displayGlyphs(const std::string& text) {
     std::vector<std::string> result;
-    auto regional = [](const std::string& glyph) {
-        return glyph.size() == 4 && glyph.compare(0, 3, "\xF0\x9F\x87") == 0 &&
-               static_cast<unsigned char>(glyph[3]) >= 0xA6 &&
-               static_cast<unsigned char>(glyph[3]) <= 0xBF;
-    };
-    // FTXUI groups combining marks. Also keep joined emoji, modifiers and flag
-    // pairs together; account for their width using the same FTXUI renderer.
+    // Use the renderer's cluster boundaries for wrapping and highlighting too.
     for (const auto& glyph : ftxui::Utf8ToGlyphs(text)) {
         if (glyph.empty()) continue; // Full-width glyph's second cell.
-        const bool modifier = glyph.size() == 4 && glyph.compare(0, 3, "\xF0\x9F\x8F") == 0 &&
-                              static_cast<unsigned char>(glyph[3]) >= 0xBB &&
-                              static_cast<unsigned char>(glyph[3]) <= 0xBF;
-        if (!result.empty() && (result.back().ends_with("\xE2\x80\x8D") ||
-                               glyph == "\xE2\x80\x8D" || modifier ||
-                               (regional(result.back()) && regional(glyph)))) result.back() += glyph;
-        else result.push_back(glyph);
+        result.push_back(glyph);
     }
     return result;
 }

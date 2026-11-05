@@ -2101,8 +2101,8 @@ inline std::wstring to_wstring(const char* s) {
 
 FTXUI_EXPORT(SCREEN) int string_width(std::string_view);
 
-// Split the string into a its glyphs. An empty one is inserted ater fullwidth
-// ones.
+// Split into display clusters (including joined emoji). An empty continuation
+// cell follows every two-cell cluster.
 FTXUI_EXPORT(SCREEN)
 std::vector<std::string> Utf8ToGlyphs(std::string_view input);
 

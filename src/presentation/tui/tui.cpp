@@ -2,6 +2,7 @@
 
 #include "mini_lexical_search/presentation/cli/cli.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
+#include "mini_lexical_search/presentation/tui/input_layout.hpp"
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
 
 #include <algorithm>
@@ -18,17 +19,6 @@ namespace {
 constexpr int kMaxInnerWidth = 100;
 constexpr int kBorderColumns = 2;
 
-int logicalOffset(const std::string& wrapped, int cursor) {
-    const int limit = std::max(0, std::min(cursor, static_cast<int>(wrapped.size())));
-    int offset = 0;
-    for (int i = 0; i < limit; ++i) {
-        if (wrapped[static_cast<std::size_t>(i)] != '\n') {
-            ++offset;
-        }
-    }
-    return offset;
-}
-
 int lineCount(const std::string& content) {
     int lines = 1;
     for (char ch : content) {
@@ -37,52 +27,6 @@ int lineCount(const std::string& content) {
         }
     }
     return lines;
-}
-
-void reflow(std::string& content, int& cursor, int wrapWidth) {
-    wrapWidth = std::max(1, wrapWidth);
-    const int target = logicalOffset(content, cursor);
-
-    std::string logical;
-    logical.reserve(content.size());
-    for (char ch : content) {
-        if (ch != '\n') {
-            logical.push_back(ch);
-        }
-    }
-
-    std::string wrapped;
-    wrapped.reserve(logical.size());
-    int lineWidth = 0;
-    int seen = 0;
-    int mapped = 0;
-    bool mappedCursor = false;
-
-    auto placeCursor = [&](int at) {
-        if (!mappedCursor && seen >= target) {
-            mapped = at;
-            mappedCursor = true;
-        }
-    };
-
-    for (const auto& glyph : displayGlyphs(logical)) {
-        const int width = ftxui::string_width(glyph);
-        if (width > 0 && lineWidth > 0 && lineWidth + width > wrapWidth) {
-            wrapped.push_back('\n');
-            lineWidth = 0;
-        }
-        placeCursor(static_cast<int>(wrapped.size()));
-        wrapped += glyph;
-        seen += static_cast<int>(glyph.size());
-        lineWidth += std::max(0, width);
-    }
-    placeCursor(static_cast<int>(wrapped.size()));
-    if (!mappedCursor) {
-        mapped = static_cast<int>(wrapped.size());
-    }
-
-    content = std::move(wrapped);
-    cursor = mapped;
 }
 
 std::string logicalText(const std::string& content) {
@@ -119,7 +63,7 @@ void run(const char* program, SearchApplication& application) {
         fieldWidth = view.mode == ViewMode::Home
                          ? std::max(1, std::min(kMaxInnerWidth, size.dimx - kBorderColumns))
                          : std::max(1, areaWidth - kBorderColumns);
-        reflow(content, cursor, fieldWidth);
+        reflowInput(content, cursor, fieldWidth);
         inputHeight = std::min({3, lineCount(content), std::max(1, size.dimy - 6)});
         if (view.mode != ViewMode::Home) {
             const int queryRows = view.query.empty() ? 0 : 1;
@@ -134,20 +78,7 @@ void run(const char* program, SearchApplication& application) {
     ftxui::Box resetBox;
     ftxui::Box quitBox;
 
-    ftxui::InputOption option;
-    option.multiline = true;
-    option.cursor_position = &cursor;
-    option.transform = [](ftxui::InputState state) {
-        if (state.is_placeholder) {
-            state.element |= ftxui::dim;
-        }
-        return state.element;
-    };
-    option.on_change = [&] {
-        geometry();
-    };
-
-    auto input = ftxui::Input(&content, option);
+    auto input = searchInput(content, cursor, geometry);
     auto resultFocus = ftxui::Button("", [] {});
     auto focusGroup = ftxui::Container::Vertical({input, resultFocus});
     auto setFocus = [&](bool results) {
