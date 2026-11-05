@@ -8,10 +8,35 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 
 namespace mini_lexical_search::cli {
 namespace {
-constexpr std::size_t kMaxMatchingLines = 0;
+constexpr const char* kSeparator = "=============================";
+
+void writeGroup(std::ostream& output, const SearchResult& result) {
+    output << '[' << result.relativePath << "] "
+           << (result.totalMatchingLines > 10 ? "10+" : std::to_string(result.totalMatchingLines)) << '\n';
+}
+
+void writePage(std::ostream& output, const SearchPage& page) {
+    if (page.files.empty()) {
+        output << "No matches.\n";
+    } else {
+        output << kSeparator << '\n';
+        for (const auto& result : page.files) {
+            writeGroup(output, result);
+            for (const auto& line : result.lines) output << line.number << ": " << line.text << '\n';
+            if (!result.warning.empty()) output << "warning: " << result.warning << '\n';
+            else if (result.lines.size() < result.totalMatchingLines) {
+                output << " > " << result.totalMatchingLines - result.lines.size() << " more\n";
+            }
+        }
+        output << kSeparator << '\n';
+    }
+    output << "Page " << page.number << " | previous: " << (page.hasPrevious ? "yes" : "no")
+           << " | next: " << (page.hasNext ? "yes" : "no") << '\n';
+}
 
 void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
     switch (event.stage) {
@@ -64,7 +89,7 @@ RebuildChoice recreateIndex(SearchApplication& application) {
     }
 }
 
-void writeUsage(std::ostream& output, const char* program) {
+void writeUsage(std::ostream& output, const char* program, OutputMode mode = OutputMode::NoTui) {
     output
         << "Mini Lexical Search " << mini_lexical_search::versionString() << "\n\n"
         << "사용법:\n"
@@ -77,7 +102,10 @@ void writeUsage(std::ostream& output, const char* program) {
         << "  --no-tui       TUI 없이 CLI로 실행\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  /search <검색어>    점수 상위 10개 문서 검색 (동점은 문서 ID순, AND 또는 OR)\n"
+        << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
+        << (mode == OutputMode::Tui
+                ? "  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 더보기·이전·다음 버튼 실행\n  마우스 클릭        더보기·이전·다음 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            프로그램 종료\n"
+                : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
 }
@@ -88,8 +116,32 @@ void printUsage(const char* program) {
     writeUsage(std::cout, program);
 }
 
+void navigate(SearchApplication& application, Navigation navigation, const std::string& path,
+              std::ostream& output, CommandFeedback* feedback) {
+    if (feedback) { *feedback = {}; feedback->display = Display::Text; }
+    try {
+        auto page = navigation == Navigation::Next ? application.nextPage()
+                        : navigation == Navigation::Previous ? application.previousPage()
+                        : application.expandFile(path);
+        if (!feedback) writePage(output, page);
+        if (feedback) { feedback->display = Display::Results; feedback->page = std::move(page); }
+        const std::string action = navigation == Navigation::Next ? "next"
+                                  : navigation == Navigation::Previous ? "prev" : "more";
+        appendLog("search navigation " + action + " " + path + " page=" + std::to_string(page.number));
+    } catch (const std::exception& error) {
+        output << "error: " << error.what() << '\n';
+    }
+}
+
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
-                      std::ostream& output) {
+                      std::ostream& output, OutputMode mode, CommandFeedback* feedback) {
+    if (feedback) *feedback = {};
+    const auto first = line.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string_view::npos) {
+        return LineAction::Ignored;
+    }
+    line = line.substr(first, line.find_last_not_of(" \t\r\n\v\f") - first + 1);
+    if (feedback) feedback->display = Display::Text;
     std::istringstream input{std::string(line)};
     std::string command;
     if (!(input >> command)) {
@@ -119,52 +171,59 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
         return LineAction::Ran;
     }
 
-    if (command == "/search") {
-        if (arguments.empty()) {
-            output << "Usage: /search <query>\n";
-        } else if (!application.ready()) {
+    if (command.front() != '/') {
+        const std::string query(line);
+        if (feedback) { feedback->newSearch = true; feedback->query = query; }
+        if (!application.ready()) {
             output << "error: index snapshot is not loaded; fix or remove "
                    << application.snapshotPath().string() << "\n";
         } else {
             try {
                 using Clock = std::chrono::steady_clock;
                 const auto started = Clock::now();
-                const auto results = application.search(arguments, kMaxMatchingLines);
-                const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(
-                                           Clock::now() - started)
-                                           .count();
-                const auto elapsed = formatElapsedMilliseconds(elapsedUs);
-                std::ostringstream record;
-                record << "search " << arguments << " (" << elapsed << " ms) results="
-                       << results.size();
-                for (std::size_t i = 0; i < results.size(); ++i) {
-                    const auto& result = results[i];
-                    record << ' ' << (i + 1) << " id=" << result.document.id
-                           << " score=" << result.score
-                           << " matchingLines=" << result.totalMatchingLines;
+                std::ostringstream summaries;
+                std::size_t fileCount = 0;
+                const auto summarize = [&](const SearchResult& result) {
+                    summaries << ' ' << ++fileCount << " id=" << result.document.id
+                              << " matchingLines=" << result.totalMatchingLines;
+                };
+                std::string elapsed;
+                const auto writeTime = [&] {
+                    elapsed = formatElapsedMilliseconds(
+                        std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - started).count());
+                    if (mode != OutputMode::Tui || !feedback)
+                        output << "searched (" << elapsed << " ms)\n";
+                };
+                if (mode == OutputMode::Tui) {
+                    auto page = application.search(query);
+                    writeTime();
+                    for (const auto& result : page.files) summarize(result);
+                    if (!feedback) writePage(output, page);
+                    if (feedback) {
+                        feedback->display = Display::Results;
+                        feedback->page = std::move(page);
+                        feedback->elapsed = elapsed;
+                    }
+                } else {
+                    application.visitAllResults(query,
+                        [&](const SearchResult& result) {
+                            if (fileCount == 0) {
+                                writeTime();
+                                output << kSeparator << '\n';
+                            }
+                            summarize(result);
+                            writeGroup(output, result);
+                        },
+                        [&](const MatchingLine& match) { output << match.number << ": " << match.text << '\n'; },
+                        [&](const std::string& warning) { output << "warning: " << warning << '\n'; });
+                    if (fileCount == 0) { writeTime(); output << "No matches.\n"; }
+                    else output << kSeparator << '\n';
                 }
-                appendLog(record.str());
-                output << "searched (" << elapsed << " ms)\n";
-                if (results.empty()) output << "No matches.\n";
-                for (std::size_t i = 0; i < results.size(); ++i) {
-                    const auto& result = results[i];
-                    output << i + 1 << ". " << result.document.title << " (" << result.document.path
-                           << ")    score: " << result.score << "\n";
-                    if (!result.warning.empty()) {
-                        output << "   warning: " << result.warning << "\n";
-                        continue;
-                    }
-                    for (const auto& match : result.lines) {
-                        output << "   " << match.number << ": " << match.text << "\n";
-                    }
-                    if (result.lines.size() < result.totalMatchingLines) {
-                        output << "   + " << result.totalMatchingLines - result.lines.size()
-                               << " more matches\n";
-                    }
-                }
+                appendLog("search " + query + " (" + elapsed + " ms) results=" +
+                          std::to_string(fileCount) + summaries.str());
             } catch (const std::exception& error) {
                 output << "error: search failed: " << error.what()
-                       << "\nUsage: /search <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
+                       << "\nUsage: <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
             }
         }
         return LineAction::Ran;
@@ -177,7 +236,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
         if (command == "/exit" || command == "/quit") {
             return LineAction::Quit;
         }
-        writeUsage(output, program);
+        writeUsage(output, program, mode);
         return LineAction::Ran;
     }
     output << "Unknown command: " << line << "\n";
@@ -196,7 +255,7 @@ int runRepl(const char* program, SearchApplication& application) {
     }
 
     std::cout << "Mini Lexical Search started.\n"
-              << "Type '/help' for commands, '/exit' to quit.\n";
+              << "Type text to search, '/help' for commands, '/exit' to quit.\n";
 
     std::string line;
     while (std::cout << "> " && std::getline(std::cin, line)) {

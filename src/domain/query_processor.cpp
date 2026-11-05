@@ -106,4 +106,42 @@ std::vector<SearchCandidate> QueryProcessor::process(const ParsedQuery& query,
     return result;
 }
 
+std::vector<DocumentId> QueryProcessor::matchingDocuments(const ParsedQuery& query,
+                                                           const InvertedIndex& index) const {
+    if (query.terms.empty() ||
+        (query.mode == QueryMode::Keyword && query.terms.size() != 1) ||
+        (query.mode != QueryMode::Keyword && query.mode != QueryMode::And && query.mode != QueryMode::Or)) {
+        throw std::invalid_argument("invalid parsed query");
+    }
+    std::vector<DocumentId> result;
+    bool first = true;
+    for (const auto& term : query.terms) {
+        if (term.empty()) throw std::invalid_argument("empty query term");
+        const auto* list = index.find(term);
+        if (!list) {
+            if (query.mode != QueryMode::Or) return {};
+            continue;
+        }
+        std::vector<DocumentId> right;
+        right.reserve(list->size());
+        for (const auto& posting : *list) right.push_back(posting.documentId);
+        if (first) {
+            result = std::move(right);
+            first = false;
+        } else {
+            std::vector<DocumentId> merged;
+            if (query.mode == QueryMode::And) {
+                std::set_intersection(result.begin(), result.end(), right.begin(), right.end(),
+                                      std::back_inserter(merged));
+            } else {
+                std::set_union(result.begin(), result.end(), right.begin(), right.end(),
+                               std::back_inserter(merged));
+            }
+            result = std::move(merged);
+        }
+        if (query.mode == QueryMode::And && result.empty()) return {};
+    }
+    return result;
+}
+
 }  // namespace mini_lexical_search

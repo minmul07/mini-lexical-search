@@ -22,7 +22,12 @@ int main() {
         index.add("gamma", 2, 9);
         const auto before = index.postings();
         auto search = [&](const std::string& text) {
-            return QueryProcessor{}.process(parseQuery(text, tokenizer), index);
+            const auto query = parseQuery(text, tokenizer);
+            const auto candidates = QueryProcessor{}.process(query, index);
+            const auto ids = QueryProcessor{}.matchingDocuments(query, index);
+            require(ids.size() == candidates.size());
+            for (std::size_t i = 0; i < ids.size(); ++i) require(ids[i] == candidates[i].documentId);
+            return candidates;
         };
         const auto single = search("ALPHA!");
         require(single.size() == 2 && single[0].documentId == 2 && single[0].score == 3);

@@ -4,15 +4,11 @@
 #include <exception>
 #include <sstream>
 #include <stdexcept>
-#include <unordered_map>
 #include <utility>
 
 #include "mini_lexical_search/application/log.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
-#include "mini_lexical_search/domain/query_processor.hpp"
-#include "mini_lexical_search/domain/top_k.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
-#include "mini_lexical_search/infrastructure/matching_lines.hpp"
 
 namespace mini_lexical_search {
 namespace {
@@ -38,23 +34,6 @@ void logIndexFailed(const std::exception& error) {
 
 }  // namespace
 
-SearchApplication::SearchApplication(std::filesystem::path snapshotPath)
-    : snapshotPath_(std::move(snapshotPath)) {
-    workingJob().set("Loading index");
-    const auto started = Clock::now();
-    try {
-        snapshot_ = loadIndexSnapshot(snapshotPath_);
-        const auto elapsed = elapsedMicroseconds(started);
-        workingJob().set("Ready");
-        appendLog("index load succeeded (" + formatElapsedMilliseconds(elapsed) + " ms)");
-    } catch (const std::exception& error) {
-        ready_ = false;
-        loadError_ = error.what();
-        workingJob().set("Failed to load index");
-        appendLog("index load failed: " + loadError_);
-    }
-}
-
 bool SearchApplication::ready() const { return ready_; }
 const std::string& SearchApplication::loadError() const { return loadError_; }
 const std::filesystem::path& SearchApplication::snapshotPath() const { return snapshotPath_; }
@@ -67,6 +46,7 @@ void SearchApplication::requireReady() const {
 
 IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
                                       const IndexProgressCallback& progress) {
+    clearSearch();
     requireReady();
     try {
         const auto notify = [&](const IndexProgress& event) {
@@ -99,8 +79,9 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
             }
             throw;
         }
-        if (work.changed) {
-            commitIndexSnapshot(std::move(work.documents), snapshot_, snapshotPath_);
+        const auto root = std::filesystem::absolute(directory).lexically_normal();
+        if (work.changed || root != snapshot_.root) {
+            commitIndexSnapshot(std::move(work.documents), root, snapshot_, snapshotPath_);
         }
         logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         workingJob().set("Ready");
@@ -118,6 +99,7 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
 
 IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directory,
                                             const IndexProgressCallback& progress) {
+    clearSearch();
     IndexSnapshot rebuilt;
     try {
         const auto notify = [&](const IndexProgress& event) {
@@ -139,7 +121,8 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
         const auto tokens = applyIndexWork(work, rebuilt.index, tokenizer_);
         const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
         notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens});
-        commitIndexSnapshot(std::move(work.documents), rebuilt, snapshotPath_);
+        commitIndexSnapshot(std::move(work.documents), std::filesystem::absolute(directory).lexically_normal(),
+                            rebuilt, snapshotPath_);
         logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         snapshot_ = std::move(rebuilt);
         ready_ = true;
@@ -155,32 +138,6 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
         appendLog("index failed");
         throw;
     }
-}
-
-std::vector<SearchResult> SearchApplication::search(const std::string& text,
-                                                    std::size_t maxMatchingLines,
-                                                    std::size_t topK) {
-    requireReady();
-    const auto query = parseQuery(text, tokenizer_);
-    const auto candidates = selectTopK(QueryProcessor{}.process(query, snapshot_.index), topK);
-    std::unordered_map<DocumentId, const Document*> documents;
-    for (const auto& document : snapshot_.documents) documents.emplace(document.id, &document);
-
-    std::vector<SearchResult> results;
-    results.reserve(candidates.size());
-    for (const auto& candidate : candidates) {
-        SearchResult result;
-        result.document = *documents.at(candidate.documentId);
-        result.score = candidate.score;
-        result.totalMatchingLines = candidate.matchedLines.size();
-        try {
-            result.lines = readMatchingLines(result.document, candidate.matchedLines, maxMatchingLines);
-        } catch (const std::exception& error) {
-            result.warning = error.what();
-        }
-        results.push_back(std::move(result));
-    }
-    return results;
 }
 
 }  // namespace mini_lexical_search

@@ -4777,14 +4777,7 @@ std::vector<std::string> SplitLines(std::string_view input) {
 }
 
 size_t GlyphWidth(std::string_view input, size_t iter) {
-  uint32_t ucs = 0;
-  if (!EatCodePoint(input, iter, &iter, &ucs)) {
-    return 0;
-  }
-  if (IsFullWidth(ucs)) {
-    return 2;
-  }
-  return 1;
+  return string_width(input.substr(iter, GlyphNext(input, iter) - iter));
 }
 
 bool IsWordCodePoint(uint32_t codepoint) {
@@ -14833,7 +14826,14 @@ class Text : public Node {
         }
 
         auto& cell = screen.CellAt(x, y);
-        cell.character = *glyph;
+        // A wide cluster must not paint over the adjacent border when the
+        // frame exposes only its first cell (e.g. a one-column input).
+        if (x == visible_box.x_max && glyph + 1 != glyphs_.end() &&
+            (glyph + 1)->empty()) {
+          cell.character = "�";
+        } else {
+          cell.character = *glyph;
+        }
 
         const size_t sel_index = line - selection_first_line_;
         if (sel_index < selection_rows_.size()) {
@@ -17903,57 +17903,98 @@ int wstring_width(const std::wstring& text) {
   return width;
 }
 
-// Return how many cells the UTF8 encoded string |input| is taking when printed.
-// Control characters are not taking any space, combining characters are
-// modifying the previous character and are not taking any space, fullwidth
-// characters are taking two cells and all the other characters are taking one
-// cell.
-int string_width(std::string_view input) {
-  // 1-byte optimization: This function is often called on a single ASCII
-  // character, so we can optimize this case by skipping the UTF8 decoding.
-  if (input.size() == 1) {
-    const char c = input[0];
-    if (c >= 32 && c < 127) {  // NOLINT
-      return 1;
-    }
+namespace {
+// Local patch: editing, layout and serialized cells must agree on emoji
+// clusters. Keep their full UTF-8 sequence in the first cell, followed by an
+// empty continuation cell. This also keeps marks on a wide base, not its tail.
+bool IsRegionalIndicator(uint32_t point) {
+  return point >= 0x1F1E6 && point <= 0x1F1FF;
+}
+
+bool IsEmojiBase(uint32_t point) {
+  return (point >= 0x1F000 && point <= 0x1FAFF) ||
+         (point >= 0x2300 && point <= 0x27FF) ||
+         (point >= 0x2190 && point <= 0x21FF) ||
+         (point >= 0x2B00 && point <= 0x2BFF) ||
+         point == 0xA9 || point == 0xAE || point == 0x203C ||
+         point == 0x2049 || point == 0x2122 || point == 0x2139 ||
+         point == 0x3030 || point == 0x303D ||
+         point == 0x3297 || point == 0x3299;
+}
+
+bool IsEmojiModifier(uint32_t point) {
+  return point >= 0x1F3FB && point <= 0x1F3FF;
+}
+
+struct DisplayGlyph {
+  size_t end;
+  int width;
+};
+
+DisplayGlyph NextDisplayGlyph(std::string_view input, size_t start) {
+  uint32_t point = 0;
+  size_t end = start;
+  if (!EatCodePoint(input, start, &end, &point) || IsControl(point)) {
+    return {end, 0};
+  }
+  if (IsCombining(point) || point == 0x200D) {
+    return {end, 0};
+  }
+  if (point == '\n') {
+    return {end, 1};
   }
 
-  // ASCII optimization: If the string is pure ASCII, we can skip the UTF8
-  // decoding and just count the number of characters, ignoring control
-  // characters.
-  bool is_pure_ascii = true;
-  for (const char c : input) {
-    if (c < 31 || c >= 127) {  // NOLINT
-      is_pure_ascii = false;
+  const bool emoji = IsEmojiBase(point);
+  const bool keycap = point == '#' || point == '*' || (point >= '0' && point <= '9');
+  bool regional = IsRegionalIndicator(point);
+  bool joined = false;
+  int width = IsFullWidth(point) || (point >= 0x1F900 && point <= 0x1FAFF) ? 2 : 1;
+  while (end < input.size()) {
+    uint32_t next = 0;
+    size_t next_end = end;
+    if (!EatCodePoint(input, end, &next_end, &next) || IsControl(next) || next == '\n') {
       break;
     }
+    const bool modifier = IsEmojiModifier(next);
+    const bool tag = next >= 0xE0020 && next <= 0xE007F;
+    if (IsCombining(next) || (emoji && (modifier || tag))) {
+      end = next_end;
+      if ((next == 0xFE0F && emoji) || (next == 0x20E3 && keycap) ||
+          (emoji && modifier)) {
+        width = 2;
+      }
+      continue;
+    }
+    if (next == 0x200D && emoji) {
+      joined = true;
+      end = next_end;
+      continue;
+    }
+    if (joined && IsEmojiBase(next)) {
+      joined = false;
+      width = 2;
+      end = next_end;
+      continue;
+    }
+    if (regional && IsRegionalIndicator(next)) {
+      regional = false;
+      width = 2;
+      end = next_end;
+      continue;
+    }
+    break;
   }
-  if (is_pure_ascii) {
-    return static_cast<int>(input.size());
-  }
+  return {end, width};
+}
+}  // namespace
 
+// Terminal cell width, using the same clusters as rendering and input editing.
+int string_width(std::string_view input) {
   int width = 0;
-  size_t start = 0;
-  while (start < input.size()) {
-    uint32_t codepoint = 0;
-    if (!EatCodePoint(input, start, &start, &codepoint)) {
-      continue;
-    }
-
-    if (IsControl(codepoint)) {
-      continue;
-    }
-
-    if (IsCombining(codepoint)) {
-      continue;
-    }
-
-    if (IsFullWidth(codepoint)) {
-      width += 2;
-      continue;
-    }
-
-    width += 1;
+  for (size_t start = 0; start < input.size();) {
+    const auto glyph = NextDisplayGlyph(input, start);
+    width += glyph.width;
+    start = glyph.end;
   }
   return width;
 }
@@ -17961,94 +18002,50 @@ int string_width(std::string_view input) {
 std::vector<std::string> Utf8ToGlyphs(std::string_view input) {
   std::vector<std::string> out;
   out.reserve(input.size());
-  size_t start = 0;
-  size_t end = 0;
-  while (start < input.size()) {
-    uint32_t codepoint = 0;
-    if (!EatCodePoint(input, start, &end, &codepoint)) {
-      start = end;
-      continue;
-    }
-
-    const auto append = input.substr(start, end - start);
-    start = end;
-
-    // Ignore control characters.
-    if (IsControl(codepoint)) {
-      continue;
-    }
-
-    // Combining characters are put with the previous glyph they are modifying.
-    if (IsCombining(codepoint)) {
-      if (!out.empty()) {
-        out.back() += append;
+  for (size_t start = 0; start < input.size();) {
+    const auto glyph = NextDisplayGlyph(input, start);
+    if (glyph.width > 0) {
+      out.emplace_back(input.substr(start, glyph.end - start));
+      if (glyph.width == 2) {
+        out.emplace_back("");
       }
-      continue;
     }
-
-    // Fullwidth characters take two cells. The second is made of the empty
-    // string to reserve the space the first is taking.
-    if (IsFullWidth(codepoint)) {
-      out.emplace_back(append);
-      out.emplace_back("");
-      continue;
-    }
-
-    // Normal characters:
-    out.emplace_back(append);
+    start = glyph.end;
   }
   return out;
 }
 
 size_t GlyphPrevious(std::string_view input, size_t start) {
-  while (true) {
-    if (start == 0) {
-      return 0;
-    }
-    start--;
-
-    // Skip the UTF8 continuation bytes.
-    if ((input[start] & 0b1100'0000) == 0b1000'0000) {
-      continue;
-    }
-
-    uint32_t codepoint = 0;
-    size_t end = 0;
-    const bool eaten = EatCodePoint(input, start, &end, &codepoint);
-
-    // Ignore invalid, control characters and combining characters.
-    if (!eaten || IsControl(codepoint) || IsCombining(codepoint)) {
-      continue;
-    }
-
-    return start;
+  start = std::min(start, input.size());
+  if (start == 0) {
+    return 0;
   }
+  const auto last = static_cast<unsigned char>(input[start - 1]);
+  if ((last >= 32 && last < 127) || last == '\n') {
+    return start - 1;
+  }
+  // Wrapped input keeps the scan bounded to the current visual line.
+  const size_t newline = input.rfind('\n', start - 1);
+  size_t previous = newline == std::string_view::npos ? 0 : newline + 1;
+  for (size_t at = previous; at < start;) {
+    const auto glyph = NextDisplayGlyph(input, at);
+    if (glyph.width > 0) {
+      previous = at;
+    }
+    at = glyph.end;
+  }
+  return previous;
 }
 
 size_t GlyphNext(std::string_view input, size_t start) {
-  bool glyph_found = false;
   while (start < input.size()) {
-    size_t end = 0;
-    uint32_t codepoint = 0;
-    const bool eaten = EatCodePoint(input, start, &end, &codepoint);
-
-    // Ignore invalid, control characters and combining characters.
-    if (!eaten || IsControl(codepoint) || IsCombining(codepoint)) {
-      start = end;
-      continue;
+    const auto glyph = NextDisplayGlyph(input, start);
+    start = glyph.end;
+    if (glyph.width > 0) {
+      break;
     }
-
-    // We eat the beginning of the next glyph. If we are eating the one
-    // requested, return its start position immediately.
-    if (glyph_found) {
-      return static_cast<int>(start);
-    }
-
-    // Otherwise, skip this glyph and iterate:
-    glyph_found = true;
-    start = end;
   }
-  return static_cast<int>(input.size());
+  return start;
 }
 
 size_t GlyphIterate(std::string_view input, int glyph_offset, size_t start) {
@@ -18066,72 +18063,27 @@ size_t GlyphIterate(std::string_view input, int glyph_offset, size_t start) {
 }
 
 std::vector<int> CellToGlyphIndex(std::string_view input) {
-  int x = -1;
   std::vector<int> out;
   out.reserve(input.size());
-  size_t start = 0;
-  size_t end = 0;
-  while (start < input.size()) {
-    uint32_t codepoint = 0;
-    const bool eaten = EatCodePoint(input, start, &end, &codepoint);
-    start = end;
-
-    // Ignore invalid / control characters.
-    if (!eaten || IsControl(codepoint)) {
-      continue;
+  int index = 0;
+  for (size_t start = 0; start < input.size();) {
+    const auto glyph = NextDisplayGlyph(input, start);
+    if (glyph.width > 0) {
+      out.insert(out.end(), glyph.width, index++);
     }
-
-    // Combining characters are put with the previous glyph they are modifying.
-    if (IsCombining(codepoint)) {
-      if (x == -1) {
-        ++x;
-        out.push_back(x);
-      }
-      continue;
-    }
-
-    // Fullwidth characters take two cells. The second is made of the empty
-    // string to reserve the space the first is taking.
-    if (IsFullWidth(codepoint)) {
-      ++x;
-      out.push_back(x);
-      out.push_back(x);
-      continue;
-    }
-
-    // Normal characters:
-    ++x;
-    out.push_back(x);
+    start = glyph.end;
   }
   return out;
 }
 
 int GlyphCount(std::string_view input) {
-  int size = 0;
-  size_t start = 0;
-  size_t end = 0;
-  while (start < input.size()) {
-    uint32_t codepoint = 0;
-    const bool eaten = EatCodePoint(input, start, &end, &codepoint);
-    start = end;
-
-    // Ignore invalid characters:
-    if (!eaten || IsControl(codepoint)) {
-      continue;
-    }
-
-    // Ignore combining characters, except when they don't have a preceding to
-    // combine with.
-    if (IsCombining(codepoint)) {
-      if (size == 0) {
-        size++;
-      }
-      continue;
-    }
-
-    size++;
+  int count = 0;
+  for (size_t start = 0; start < input.size();) {
+    const auto glyph = NextDisplayGlyph(input, start);
+    count += glyph.width > 0;
+    start = glyph.end;
   }
-  return size;
+  return count;
 }
 
 std::vector<WordBreakProperty> Utf8ToWordBreakProperty(std::string_view input) {

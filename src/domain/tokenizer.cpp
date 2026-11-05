@@ -71,49 +71,48 @@ bool isTokenCodePoint(char32_t codePoint) {
            (codePoint >= 0xD7B0 && codePoint <= 0xD7FF);    // Jamo Extended-B
 }
 
-void flushToken(std::vector<std::string>& tokens, std::string& token) {
-    if (!token.empty()) {
-        tokens.push_back(std::move(token));
-        token.clear();
+// 같은 스캐너를 사용하되 인덱싱 경로에서는 위치 벡터를 만들지 않는다.
+template <typename Emit>
+void scanTokens(const std::string& text, Emit emit) {
+    std::string token;
+    std::size_t begin = 0;
+    auto flush = [&](std::size_t end) {
+        if (!token.empty()) {
+            emit(std::move(token), begin, end);
+            token.clear();
+        }
+    };
+    for (std::size_t index = 0; index < text.size();) {
+        char32_t point = static_cast<unsigned char>(text[index]);
+        std::size_t length = 1;
+        const bool valid = point < 0x80 || decodeUtf8(text, index, point, length);
+        if (valid && isTokenCodePoint(point)) {
+            if (token.empty()) begin = index;
+            if (point >= 'A' && point <= 'Z') token += static_cast<char>(point - 'A' + 'a');
+            else token.append(text, index, length);
+        } else {
+            flush(index);
+        }
+        index += length;
     }
+    flush(text.size());
 }
 
 }  // namespace
 
 std::vector<std::string> SimpleTokenizer::tokenize(const std::string& text) {
     std::vector<std::string> tokens;
-    std::string token;
+    scanTokens(text, [&](std::string token, std::size_t, std::size_t) {
+        tokens.push_back(std::move(token));
+    });
+    return tokens;
+}
 
-    for (std::size_t index = 0; index < text.size();) {
-        const unsigned char byte = static_cast<unsigned char>(text[index]);
-        if (byte < 0x80) {
-            if (byte >= '0' && byte <= '9') {
-                token += static_cast<char>(byte);
-            } else if (byte >= 'a' && byte <= 'z') {
-                token += static_cast<char>(byte);
-            } else if (byte >= 'A' && byte <= 'Z') {
-                token += static_cast<char>(byte - 'A' + 'a');
-            } else {
-                // 공백, 문장부호, 제어 바이트는 토큰을 구분한다.
-                flushToken(tokens, token);
-            }
-            ++index;
-            continue;
-        }
-
-        char32_t codePoint = 0;
-        std::size_t length = 1;
-        if (decodeUtf8(text, index, codePoint, length) && isTokenCodePoint(codePoint)) {
-            // 한글이 변경되지 않도록 원본 바이트를 유지한다.
-            token.append(text, index, length);
-        } else {
-            // 허용하지 않거나 잘못된 code point는 토큰을 구분한다.
-            flushToken(tokens, token);
-        }
-        index += length;
-    }
-
-    flushToken(tokens, token);
+std::vector<TokenSpan> SimpleTokenizer::tokenizeWithOffsets(const std::string& text) {
+    std::vector<TokenSpan> tokens;
+    scanTokens(text, [&](std::string token, std::size_t begin, std::size_t end) {
+        tokens.push_back({std::move(token), begin, end});
+    });
     return tokens;
 }
 

@@ -10,8 +10,7 @@ namespace mini_lexical_search {
 IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input);
 
 // 바이너리 snapshot을 원자적으로 저장하며, 저장 실패 시 기존 파일을 보존한다.
-void saveIndexSnapshot(const std::vector<Document>& documents,
-                       const InvertedIndex& index,
+void saveIndexSnapshot(const IndexSnapshot& snapshot,
                        const std::filesystem::path& output);
 
 }  // namespace mini_lexical_search

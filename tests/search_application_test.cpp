@@ -15,6 +15,11 @@ using namespace mini_lexical_search;
 
 namespace {
 
+std::vector<SearchResult> search(SearchApplication& app, const std::string& query) {
+    return app.search(query).files;
+}
+
+
 void require(bool condition, const std::string& message) {
     if (!condition) throw std::runtime_error(message);
 }
@@ -58,7 +63,7 @@ void testSession(const fs::path& root) {
     SearchApplication app(snapshot);
     require(app.ready() && app.loadError().empty(), "missing snapshot must start ready");
     require(workingJob().label() == "Ready", "missing snapshot must be ready");
-    require(app.snapshotPath() == snapshot && app.search("alpha").empty(), "empty session failed");
+    require(app.snapshotPath() == snapshot && search(app, "alpha").empty(), "empty session failed");
 
     std::vector<IndexProgress> events;
     auto collect = [&](const IndexProgress& event) { events.push_back(event); };
@@ -69,29 +74,26 @@ void testSession(const fs::path& root) {
             "wrong indexing counters");
     require(events[1].metadata.added == 2 && events[3].tokens.tokens == 9, "event counters missing");
 
-    const auto results = app.search("ALPHA");
+    const auto results = search(app, "ALPHA");
     require(results.size() == 2 && results[0].document.id < results[1].document.id,
             "result order or normalization failed");
-    require(results[0].score == 3 && results[0].totalMatchingLines == 2 && results[0].lines.size() == 2,
-            "scores or matching lines failed");
+    require(results[0].totalMatchingLines == 2 && results[0].lines.size() == 2,
+            "matching lines failed");
     require(results[0].lines[0].number == 1 && results[0].lines[1].number == 2 &&
             results[0].lines[0].text == "Alpha beta alpha" && results[0].warning.empty(),
             "matching line values failed");
     require(results[0].document.tokenCount == 6 && !results[0].document.hash.empty(),
             "document information missing");
-    const auto limited = app.search("alpha", 1);
-    require(limited[0].lines.size() == 1 && limited[0].totalMatchingLines == 2,
-            "line limit lost total count");
-    require(app.search("자료구조 AND 알고리즘").size() == 1, "AND search failed");
-    require(app.search("자료구조 OR 알고리즘").size() == 2, "OR search failed");
-    require(app.search("absent").empty(), "nonmatching query failed");
-    requireFailure([&] { app.search("alpha beta"); }, "invalid query accepted");
-    require(app.search("alpha").size() == 2, "query failure broke session");
+    require(search(app, "자료구조 AND 알고리즘").size() == 1, "AND search failed");
+    require(search(app, "자료구조 OR 알고리즘").size() == 2, "OR search failed");
+    require(search(app, "absent").empty(), "nonmatching query failed");
+    requireFailure([&] { search(app, "alpha beta"); }, "invalid query accepted");
+    require(search(app, "alpha").size() == 2, "query failure broke session");
 
     const auto saved = read(snapshot);
     const auto modified = fs::last_write_time(snapshot);
     SearchApplication reopened(snapshot);
-    require(reopened.ready() && reopened.search("alpha")[0].score == 3, "reload failed");
+    require(reopened.ready() && search(reopened, "alpha")[0].totalMatchingLines == 2, "reload failed");
     events.clear();
     const auto unchanged = reopened.index(documents, collect);
     requireStages(events);
@@ -117,7 +119,7 @@ void testSession(const fs::path& root) {
     }, "missing tokenization input accepted");
     require(events.size() == 3 && events.back().stage == IndexStage::TokenizationStarted,
             "failed tokenization emitted completion");
-    require(read(snapshot) == saved && reopened.search("alpha").size() == 2,
+    require(read(snapshot) == saved && search(reopened, "alpha").size() == 2,
             "tokenization failure changed session");
 
     write(documents / "a.md", "replacement\n");
@@ -125,8 +127,8 @@ void testSession(const fs::path& root) {
     events.clear();
     requireFailure([&] { reopened.index(documents, collect); }, "blocked save accepted");
     requireStages(events);
-    require(read(snapshot) == saved && reopened.search("alpha")[0].score == 3 &&
-            reopened.search("replacement").empty(), "save failure did not restore postings");
+    require(read(snapshot) == saved && search(reopened, "alpha")[0].totalMatchingLines == 2 &&
+            search(reopened, "replacement").empty(), "save failure did not restore postings");
     fs::remove(snapshot.string() + ".tmp");
 
     // A UI observer exception after rebuilding also restores the saved index.
@@ -135,19 +137,19 @@ void testSession(const fs::path& root) {
             if (event.stage == IndexStage::TokenizationCompleted) throw std::runtime_error("observer");
         });
     }, "observer exception swallowed");
-    require(read(snapshot) == saved && reopened.search("replacement").empty(),
+    require(read(snapshot) == saved && search(reopened, "replacement").empty(),
             "observer failure changed session");
     const auto retry = reopened.index(documents);
-    require(retry.metadata.updated == 1 && reopened.search("replacement").size() == 1,
+    require(retry.metadata.updated == 1 && search(reopened, "replacement").size() == 1,
             "retry after failed save/observer failed");
-    require(results[0].score == 3 && results[0].document.tokenCount == 6,
+    require(results[0].document.tokenCount == 6,
             "previous results were invalidated by indexing");
 
     // Original file loss is a per-document warning, not a search failure.
     fs::remove(documents / "a.md");
     const auto beforeSearch = read(snapshot);
     const auto beforeTime = fs::last_write_time(snapshot);
-    const auto warnings = reopened.search("replacement OR beta");
+    const auto warnings = search(reopened, "replacement OR beta");
     require(warnings.size() == 2 && !warnings[0].warning.empty() && warnings[0].lines.empty() &&
             warnings[0].totalMatchingLines == 1 && warnings[1].warning.empty() &&
             warnings[1].lines.size() == 1, "document warning discarded later results");
@@ -162,7 +164,7 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     SearchApplication broken(corrupt);
     require(!broken.ready() && !broken.loadError().empty(), "corrupt snapshot accepted");
     require(workingJob().label() == "Failed to load index", "corrupt snapshot must fail the job");
-    requireFailure([&] { broken.search("alpha"); }, "search on corrupt session accepted");
+    requireFailure([&] { search(broken, "alpha"); }, "search on corrupt session accepted");
     std::vector<IndexProgress> events;
     requireFailure([&] { broken.index(root, [&](const IndexProgress& e) { events.push_back(e); }); },
                    "index on corrupt session accepted");
@@ -180,7 +182,7 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     fs::remove(corrupt.string() + ".tmp");
     const auto rebuilt = broken.rebuildIndex(documents);
     require(broken.ready() && workingJob().label() == "Ready" && rebuilt.metadata.added == 1 &&
-                broken.search("alpha").size() == 1,
+                search(broken, "alpha").size() == 1,
             "rebuild did not replace the damaged snapshot");
     require(read(corrupt) != "not a binary index", "rebuild kept the damaged text");
 
@@ -190,155 +192,131 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     SearchApplication fresh(snapshot);
     fs::create_directory(snapshot.string() + ".tmp");
     requireFailure([&] { fresh.index(documents); }, "first blocked save accepted");
-    require(!fs::exists(snapshot) && fresh.search("alpha").empty(), "first failure retained unsaved state");
+    require(!fs::exists(snapshot) && search(fresh, "alpha").empty(), "first failure retained unsaved state");
     fs::remove(snapshot.string() + ".tmp");
-    require(fresh.index(documents).metadata.added == 1 && fresh.search("alpha").size() == 1,
+    require(fresh.index(documents).metadata.added == 1 && search(fresh, "alpha").size() == 1,
             "first save retry failed");
 }
 
-void testRanking(const fs::path& root) {
-    const auto documents = root / "documents";
-    const auto snapshot = root / "index.bin";
-    fs::create_directories(documents);
-    write(documents / "a_top.txt", "red\nred\nred\nblue blue\n");
-    write(documents / "b_early.txt", "same\n");
-    write(documents / "c_late.txt", "same\n");
-    write(documents / "m_low.txt", "red\n");
-    write(documents / "y_top.txt", "same same\n");
-    write(documents / "z_mid.txt", "red red\nblue\n");
+void testBrowsing(const fs::path& root) {
+    const auto docs = root / "documents";
+    fs::create_directories(docs / "z-dir/한글 폴더");
+    write(docs / "a-root.txt", "hit hit beta\n");
+    write(docs / "z-dir/a.txt", "hit\nnoise\nhit beta\n");
+    write(docs / "z-dir/한글 폴더/b.md", "hit\n");
+    SearchApplication app(root / "index.bin");
+    app.index(docs);
+    const auto page = app.search("hit OR beta");
+    require(page.files.size() == 3 && page.files[0].relativePath == "z-dir/한글 폴더/b.md" &&
+            page.files[1].relativePath == "z-dir/a.txt" && page.files[2].relativePath == "a-root.txt",
+            "directory-first traversal failed");
+    require(page.files[2].totalMatchingLines == 1 && page.files[1].lines[1].number == 3,
+            "row union/dedup failed");
+    require(app.search("hit AND beta").files.size() == 2, "document-level AND changed");
+    require(app.search("hit OR hit").files.size() == 3, "repeated OR changed matches");
+    write(docs / "z-dir/0-new.txt", "hit\n");
+    fs::rename(docs / "a-root.txt", docs / "b-root.txt");
+    app.index(docs);
+    requireFailure([&] { app.currentPage(); }, "index did not clear session");
+    const auto updated = app.search("hit");
+    require(updated.files[1].relativePath == "z-dir/0-new.txt" &&
+            updated.files[1].document.id > updated.files[2].document.id,
+            "incremental traversal used document IDs");
+    SearchApplication reopened(root / "index.bin");
+    require(reopened.search("hit").files[0].relativePath == page.files[0].relativePath,
+            "reload lost root/order");
 
-    SearchApplication app(snapshot);
-    const auto indexed = app.index(documents);
-    require(indexed.metadata.added == 6, "ranking fixture was not indexed");
-
-    const auto ranked = app.search("red");
-    require(ranked.size() == 3 && ranked[0].document.title == "a_top.txt" && ranked[0].score == 3 &&
-                ranked[0].lines.size() == 3 && ranked[0].lines[0].text == "red" &&
-                ranked[1].document.title == "z_mid.txt" && ranked[1].score == 2 &&
-                ranked[2].document.title == "m_low.txt" && ranked[2].score == 1 &&
-                ranked[0].document.id < ranked[2].document.id && ranked[2].document.id < ranked[1].document.id,
-            "single keyword ranking failed");
-
-    const auto limited = app.search("red", 1, 2);
-    require(limited.size() == 2 && limited[0].document.title == "a_top.txt" &&
-                limited[0].lines.size() == 1 && limited[0].totalMatchingLines == 3 &&
-                limited[0].lines[0].text == "red" && limited[1].document.title == "z_mid.txt" &&
-                limited[1].warning.empty(),
-            "maxMatchingLines and topK failed");
-    require(app.search("red", 0, 0).empty(), "topK zero returned matches");
-    require(app.search("red", 0, 1).size() == 1 && app.search("red", 0, 1)[0].document.title == "a_top.txt",
-            "topK one failed");
-    const auto all = app.search("red", 0, 3);
-    require(all.size() == 3 && all[0].score == 3 && all[2].score == 1, "topK equal to candidates failed");
-    const auto more = app.search("red", 0, 100);
-    require(more.size() == 3 && more[0].document.title == "a_top.txt" &&
-                more[2].document.title == "m_low.txt",
-            "topK above candidates failed");
-
-    const auto both = app.search("red AND blue");
-    require(both.size() == 2 && both[0].document.title == "a_top.txt" && both[0].score == 5 &&
-                both[1].document.title == "z_mid.txt" && both[1].score == 3,
-            "AND ranking failed");
-    const auto either = app.search("red OR blue");
-    require(either.size() == 3 && either[0].score == 5 && either[1].score == 3 && either[2].score == 1,
-            "OR ranking failed");
-    const auto repeatedAnd = app.search("red AND red");
-    const auto repeatedOr = app.search("red OR red");
-    require(repeatedAnd.size() == ranked.size() && repeatedOr.size() == ranked.size(),
-            "duplicate terms changed the result count");
-    for (std::size_t i = 0; i < ranked.size(); ++i) {
-        require(repeatedAnd[i].score == ranked[i].score && repeatedAnd[i].document.id == ranked[i].document.id &&
-                    repeatedOr[i].score == ranked[i].score && repeatedOr[i].document.id == ranked[i].document.id,
-                "duplicate terms changed the score");
-    }
-
-    const auto ties = app.search("same", 0, 2);
-    require(ties.size() == 2 && ties[0].document.title == "y_top.txt" && ties[0].score == 2 &&
-                ties[1].document.title == "b_early.txt" && ties[1].score == 1,
-            "tie at the topK boundary failed");
-    const auto allTies = app.search("same");
-    require(allTies.size() == 3 && allTies[1].document.title == "b_early.txt" &&
-                allTies[2].document.title == "c_late.txt" &&
-                allTies[1].document.id < allTies[2].document.id,
-            "equal scores were not ordered by document id");
-
-    const auto saved = read(snapshot);
-    const auto modified = fs::last_write_time(snapshot);
-    SearchApplication reopened(snapshot);
-    const auto reloaded = reopened.search("red");
-    require(reloaded.size() == ranked.size() && reloaded[0].score == 3 && reloaded[0].lines.size() == 3 &&
-                reloaded[2].document.title == "m_low.txt",
-            "reloaded ranking changed");
-    require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
-            "ranking search changed the snapshot");
-
-    fs::remove(documents / "m_low.txt");
-    const auto skipped = app.search("red", 0, 2);
-    require(skipped.size() == 2 && skipped[0].document.title == "a_top.txt" && skipped[0].warning.empty() &&
-                skipped[1].document.title == "z_mid.txt" && skipped[1].warning.empty(),
-            "document outside topK was returned or read");
-
-    fs::remove(documents / "a_top.txt");
-    const auto failed = app.search("red", 0, 1);
-    require(failed.size() == 1 && failed[0].document.title == "a_top.txt" && failed[0].score == 3 &&
-                failed[0].lines.empty() && failed[0].totalMatchingLines == 3 &&
-                failed[0].warning.find("cannot open") != std::string::npos,
-            "read failure replaced the selected document");
-    require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
-            "failed read changed the snapshot");
+    // Streaming returns every row in traversal order without keeping a pageable session.
+    std::vector<std::string> paths;
+    std::size_t rows = 0;
+    reopened.visitAllResults("hit", [&](const SearchResult& group) { paths.push_back(group.relativePath); },
+        [&](const MatchingLine&) { ++rows; }, [&](const std::string&) { throw std::runtime_error("unexpected warning"); });
+    require(paths.size() == 4 && rows == 5, "stream omitted results");
+    requireFailure([&] { reopened.currentPage(); }, "stream retained navigable session");
+    requireFailure([&] { reopened.visitAllResults("hit", [](const SearchResult&) {},
+        [](const MatchingLine&) { throw std::runtime_error("sink"); }, [](const std::string&) {}); },
+        "sink failure was swallowed");
 }
 
-void testDefaultTopK(const fs::path& root) {
-    const auto documents = root / "documents";
-    const auto snapshot = root / "index.bin";
-    fs::create_directories(documents);
-    const std::vector<std::pair<std::string, int>> files{
-        {"n00.txt", 3}, {"n01.txt", 1}, {"n02.txt", 12}, {"n03.txt", 2},
-        {"n04.txt", 11}, {"n05.txt", 10}, {"n06.txt", 9}, {"n07.txt", 8},
-        {"n08.txt", 7}, {"n09.txt", 6}, {"n10.txt", 5}, {"n11.txt", 4}};
-    for (const auto& [title, score] : files) {
-        std::string text;
-        for (int count = 0; count < score; ++count) {
-            if (count != 0) text += ' ';
-            text += "hit";
+std::string hits(int count) {
+    std::string text;
+    for (int i = 0; i < count; ++i) text += "hit hit beta\r\n";
+    return text;
+}
+
+void testPages(const fs::path& root) {
+    const auto docs = root / "documents";
+    fs::create_directories(docs);
+    // 10 + 10 + 10 + 10 + 9 = 49, then a whole 10-row group => 59.
+    const std::vector<int> counts{100, 11, 10, 10, 9, 10, 1, 0};
+    for (std::size_t i = 0; i < counts.size(); ++i) {
+        write(docs / (std::to_string(i) + " file.txt"), hits(counts[i]));
+    }
+    SearchApplication app(root / "index.bin");
+    app.index(docs);
+    auto first = app.search("hit AND beta");
+    require(first.number == 1 && !first.hasPrevious && first.hasNext && first.files.size() == 6,
+            "soft page boundary failed");
+    std::size_t displayed = 0;
+    for (const auto& file : first.files) displayed += file.lines.size();
+    require(displayed == 59 && first.files[0].totalMatchingLines == 100 &&
+            first.files[1].totalMatchingLines == 11 && first.files[4].totalMatchingLines == 9,
+            "initial group sizes/counts failed");
+    require(first.files[0].lines[0].text == "hit hit beta", "CRLF not stripped");
+    auto expanded = app.expandFile("0 file.txt");
+    require(expanded.files[0].lines.size() == 20 && expanded.files.size() == 6, "expansion moved files");
+    requireFailure([&] { app.expandFile("6 file.txt"); }, "off-page file expanded");
+    auto second = app.nextPage();
+    require(second.number == 2 && second.hasPrevious && !second.hasNext && second.files.size() == 1,
+            "next page repeated hidden rows or empty files");
+    require(app.nextPage().number == 2, "next crossed last page");
+    require(app.previousPage().files[0].lines.size() == 20, "previous lost expansion");
+    require(app.previousPage().number == 1, "previous crossed first page");
+    for (int i = 0; i < 9; ++i) expanded = app.expandFile("0 file.txt");
+    require(expanded.files[0].lines.size() == 100 && expanded.files[0].lines.back().number == 100,
+            "repeated expansion lost rows");
+    for (std::size_t i = 0; i < expanded.files[0].lines.size(); ++i) {
+        require(expanded.files[0].lines[i].number == i + 1, "expanded rows duplicated/reordered");
+    }
+    require(app.expandFile("0 file.txt").files[0].lines.size() == 100, "exhausted expansion changed rows");
+    // Already cached data survives original loss; further reads fail once, preserving earlier rows.
+    fs::remove(docs / "1 file.txt");
+    const auto failed = app.expandFile("1 file.txt");
+    require(!failed.files[1].warning.empty() && failed.files[1].lines.size() == 10,
+            "failed expansion discarded cached rows");
+    write(docs / "1 file.txt", hits(11));
+    require(app.expandFile("1 file.txt").files[1].lines.size() == 10, "failed file was retried in session");
+    require(app.search("hit").files[1].warning.empty(), "new query did not retry failed file");
+    requireFailure([&] { app.search("hit OR"); }, "bad query accepted");
+    requireFailure([&] { app.currentPage(); }, "bad query retained old session");
+    app.search("hit");
+    requireFailure([&] { app.index(root / "missing"); }, "missing directory accepted");
+    requireFailure([&] { app.nextPage(); }, "failed indexing retained session");
+
+    std::size_t streamed = 0, groups = 0;
+    app.visitAllResults("hit OR beta", [&](const SearchResult&) { ++groups; },
+        [&](const MatchingLine&) { ++streamed; }, [](const std::string&) {});
+    require(groups == 7 && streamed == 151, "unlimited stream truncated results");
+}
+
+void testPageBoundaries(const fs::path& root) {
+    for (const int count : {0, 1, 49, 50, 51, 100, 101}) {
+        const auto fixture = root / std::to_string(count);
+        const auto docs = fixture / "docs";
+        fs::create_directories(docs);
+        for (int i = 0; i < count; ++i) write(docs / (std::to_string(i) + ".txt"), "hit\n");
+        SearchApplication app(fixture / "index.bin");
+        app.index(docs);
+        auto page = app.search("hit");
+        std::size_t total = page.files.size();
+        while (page.hasNext) {
+            page = app.nextPage();
+            require(page.files.size() <= 50, "one-row groups exceeded threshold");
+            total += page.files.size();
         }
-        write(documents / title, text + "\n");
+        require(total == static_cast<std::size_t>(count), "page traversal omitted files");
+        require(app.nextPage().number == page.number, "last page changed");
     }
-
-    SearchApplication app(snapshot);
-    require(app.index(documents).metadata.added == 12, "default topK fixture was not indexed");
-    const auto results = app.search("hit");
-    const std::vector<std::string> expected{
-        "n02.txt", "n04.txt", "n05.txt", "n06.txt", "n07.txt", "n08.txt",
-        "n09.txt", "n10.txt", "n11.txt", "n00.txt"};
-    require(results.size() == expected.size(), "default search did not return 10 results");
-    for (std::size_t i = 0; i < results.size(); ++i) {
-        require(results[i].document.title == expected[i] &&
-                    results[i].score == static_cast<double>(12 - i) && results[i].warning.empty() &&
-                    results[i].lines.size() == 1,
-                "default topK order failed");
-    }
-    bool followsIdOrder = true;
-    for (std::size_t i = 1; i < results.size(); ++i) {
-        if (results[i].document.id < results[i - 1].document.id) followsIdOrder = false;
-    }
-    require(!followsIdOrder, "default results followed document id order");
-
-    fs::remove(documents / "n01.txt");
-    fs::remove(documents / "n03.txt");
-    const auto skipped = app.search("hit");
-    require(skipped.size() == 10 && skipped.front().document.title == "n02.txt" &&
-                skipped.back().document.title == "n00.txt",
-            "missing documents outside topK changed the result");
-    for (const auto& result : skipped) {
-        require(result.warning.empty(), "document outside topK was opened");
-    }
-
-    fs::remove(documents / "n02.txt");
-    const auto failed = app.search("hit", 0, 1);
-    require(failed.size() == 1 && failed[0].document.title == "n02.txt" &&
-                failed[0].warning.find("cannot open") != std::string::npos,
-            "default topK replaced a document that could not be read");
 }
 
 }  // namespace
@@ -350,8 +328,9 @@ int main(int argc, char** argv) {
         fs::remove_all(root);
         fs::create_directories(root);
         testSession(root / "session");
-        testRanking(root / "ranking");
-        testDefaultTopK(root / "default-top-k");
+        testBrowsing(root / "browsing");
+        testPages(root / "pages");
+        testPageBoundaries(root / "boundaries");
         testCorruptionAndFirstSave(root / "failures");
         fs::remove_all(root);
     } catch (const std::exception& error) {

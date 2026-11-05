@@ -25,10 +25,13 @@ TokenizeStats applyIndexWork(IndexWork& work,
 }
 
 void commitIndexSnapshot(std::vector<Document> documents,
+                         const std::filesystem::path& root,
                          IndexSnapshot& snapshot,
                          const std::filesystem::path& output) {
     try {
-        saveIndexSnapshot(documents, snapshot.index, output);
+        snapshot.root = root;
+        snapshot.documents = std::move(documents);
+        saveIndexSnapshot(snapshot, output);
     } catch (...) {
         // 메모리의 posting은 이미 재구축되었으므로 마지막 저장 상태로 복구한다.
         // 다음 `/index`는 일관된 상태에서 다시 시도한다.
@@ -39,7 +42,6 @@ void commitIndexSnapshot(std::vector<Document> documents,
         }
         throw;
     }
-    snapshot.documents = std::move(documents);
 }
 
 IndexUpdate updateIndexSnapshot(const std::filesystem::path& directory,
@@ -50,8 +52,9 @@ IndexUpdate updateIndexSnapshot(const std::filesystem::path& directory,
     IndexUpdate update;
     update.metadata = work.stats;
     update.tokens = applyIndexWork(work, snapshot.index, tokenizer);
-    if (work.changed) {
-        commitIndexSnapshot(std::move(work.documents), snapshot, output);
+    const auto root = std::filesystem::absolute(directory).lexically_normal();
+    if (work.changed || root != snapshot.root) {
+        commitIndexSnapshot(std::move(work.documents), root, snapshot, output);
     }
     return update;
 }

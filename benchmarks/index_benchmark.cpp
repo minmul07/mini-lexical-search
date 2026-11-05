@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
             SimpleTokenizer tokenizer;
             // 전체 인덱싱에는 최초 저장이 포함되며, 아래 saveMs는 같은 스냅샷의 재저장이다.
             const double indexAndSaveMs = measure([&] { updateIndexSnapshot(argv[1], snapshot, output, tokenizer); });
-            const double saveMs = measure([&] { saveIndexSnapshot(snapshot.documents, snapshot.index, output); });
+            const double saveMs = measure([&] { saveIndexSnapshot(snapshot, output); });
             IndexSnapshot loaded;
             const double loadMs = measure([&] { loaded = loadIndexSnapshot(output); });
             if (snapshot.documents.size() != loaded.documents.size() ||

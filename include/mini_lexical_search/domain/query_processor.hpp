@@ -26,6 +26,9 @@ class QueryProcessor {
 public:
     // 역색인을 변경하지 않고 모든 매칭 결과를 문서 ID순으로 반환한다.
     // 검색어는 parseQuery로 정규화하며, 반복된 검색어는 한 번만 계산에 반영한다.
+    // 매칭 줄을 복사하지 않고 일치 문서 ID만 오름차순으로 계산한다.
+    std::vector<DocumentId> matchingDocuments(const ParsedQuery& query,
+                                             const InvertedIndex& index) const;
     std::vector<SearchCandidate> process(const ParsedQuery& query,
                                          const InvertedIndex& index) const;
 };
