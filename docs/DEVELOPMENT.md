@@ -6,16 +6,33 @@
 | --- | --- |
 | 채점 환경 | Ubuntu 24.04 LTS 64-bit / GNU g++ |
 | 언어 | ISO C++20 (`-std=c++20`) |
-| 빌드 도구 | CMake 3.20 이상 |
+| 빌드 도구 | 제출: GNU Make / 개발·테스트: CMake 3.20 이상 |
 | 외부 라이브러리 | FTXUI만 허용하며 UI에만 사용. 핵심 로직은 STL과 직접 작성한 코드로 구현 |
 | 제출 조건 | FTXUI 소스 포함, 전체 10MB 이하, 설치·다운로드 없이 `make` 한 번으로 빌드 |
 
-현재는 CMake 빌드를 지원하며, 제출용 `make` 단일 명령 빌드는 아직 구현되지 않았다.
+제출용 Makefile은 CMake 없이 GNU make와 g++만으로 전체 소스를 빌드한다.
 FTXUI 7.0.3 소스는 `third_party/ftxui/`에 포함되어 있다.
 번들 소스에는 이모지 조합의 커서 이동·셀 너비·렌더링 경계를 통일하고 전각 문자 뒤 결합 부호를 보존하는 로컬 패치가 있다. FTXUI 교체 시 이 패치와 `tui_input_test`를 함께 확인한다.
 상세 조건은 [FTXUI 사용 승인](FTXUI_APPROVAL.md)을 참고한다.
 
 ## 빌드와 검증
+
+제출용 빌드와 실행:
+
+```bash
+make
+./mini_lexical_search start
+./mini_lexical_search start --no-tui
+make clean
+```
+
+실행 파일은 루트의 `mini_lexical_search`, 오브젝트와 헤더 의존성 파일은 `build/make/`에 생성한다.
+`make -j 4`로 병렬 빌드할 수 있으며 소스·헤더 변경 시 관련 오브젝트를 다시 빌드한다.
+`CXX`, `CPPFLAGS`, `CXXFLAGS`, `LDFLAGS`, `LDLIBS`를 지정할 수 있다. 기본 최적화는 `-O2`이며 C++20과 pthread 옵션은 항상 적용한다.
+`make clean`은 이 실행 파일과 `build/make/`만 제거한다.
+제출물에는 소스·헤더·Makefile·FTXUI 소스와 LICENSE를 포함하고, `.git/`, `build/`, 실행 파일 등 생성물은 제외한다. 최종 보고서 PDF를 포함한 제출물의 10MB 제한은 제출 직전에 확인한다.
+
+개발용 빌드와 전체 자동 테스트:
 
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug

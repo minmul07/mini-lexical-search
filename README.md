@@ -37,6 +37,16 @@ searched (1.234 ms)
 
 ## 빌드 및 실행
 
+제출 환경에서는 별도 설치·다운로드나 CMake 없이 빌드한다.
+
+```bash
+make
+./mini_lexical_search start
+./mini_lexical_search start --no-tui
+```
+
+개발 및 자동 테스트용 CMake 빌드:
+
 ```bash
 cmake -S . -B build
 cmake --build build -j
@@ -76,4 +86,4 @@ ctest --test-dir build --output-on-failure
 
 ## 기술 스택
 
-ISO C++20 (`-std=c++20`), CMake, STL (SHA-256 자체 구현)
+ISO C++20 (`-std=c++20`), GNU Make / CMake, STL (SHA-256 자체 구현)

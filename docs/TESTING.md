@@ -13,6 +13,8 @@ ctest --test-dir build --output-on-failure
 문서만 변경한 경우 내용의 정확성, 링크, diff 형식을 확인한다.
 자동 저장 테스트는 빌드 디렉터리의 격리된 경로를 사용한다.
 
+제출용 Makefile 변경 시 `make clean` 후 `make`만으로 빌드하고 루트 실행 파일의 `--help`, `--version`과 격리된 작업 디렉터리에서 no-TUI 인덱싱·검색을 확인한다. 재실행 시 불필요한 빌드가 없는지, 헤더 변경 시 관련 소스가 다시 컴파일되는지, `make clean`이 기존 CMake 산출물을 보존하는지도 확인한다. Makefile은 CMake 호출·설치·다운로드 없이 빌드해야 한다.
+
 ## 자동 테스트
 
 | 분야 | 테스트 | 핵심 확인 항목 |
