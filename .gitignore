@@ -1,6 +1,7 @@
 # Build directories
 build/
 cmake-build-*/
+/mini_lexical_search
 
 # CMake artifacts
 CMakeCache.txt

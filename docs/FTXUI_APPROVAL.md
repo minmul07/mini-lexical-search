@@ -13,14 +13,14 @@
 
 ## 제출 및 빌드 조건
 
-* FTXUI 소스를 프로젝트 내부에 포함(vendoring)하여 함께 제출한다. amalgamated 배포본 7.0.3(`f921fad`)을 `third_party/ftxui/`에 두었다. 빌드는 split 파일(`ftxui.hpp`, `ftxui.cpp`)과 `LICENSE`를 사용하며, CMake 타깃 `ftxui`가 pthread와 함께 컴파일한다. 핵심 모듈과 CLI는 이 타깃에 링크하지 않는다.
+* FTXUI 소스를 프로젝트 내부에 포함(vendoring)하여 함께 제출한다. amalgamated 배포본 7.0.3(`f921fad`)을 `third_party/ftxui/`에 두었다. 빌드는 split 파일(`ftxui.hpp`, `ftxui.cpp`)과 `LICENSE`를 사용하며, 제출용 Makefile과 CMake 타깃 `ftxui`가 pthread와 함께 컴파일한다. CMake에서 핵심 모듈과 CLI는 이 타깃에 링크하지 않는다.
 * 라이브러리와 직접 작성한 코드를 포함한 최종 제출 용량은 10MB를 초과하지 않아야 한다.
 * Ubuntu 24.04 LTS 64-bit, GNU g++ 및 ISO C++20(`-std=c++20`) 환경에서 별도 패키지 설치나 네트워크 다운로드 없이 `make` 한 번으로 실행 파일을 생성해야 한다.
 * 실행 시 `--no-tui` 옵션으로 FTXUI 화면 없이 CLI에서 핵심 검색 기능을 독립적으로 사용할 수 있어야 한다.
 
 ## 현재 상태와 후속 검증
 
-핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. `start`의 기본 경로는 FTXUI TUI이며 `--no-tui`로 CLI REPL을 실행한다. 현재 TUI는 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두고, Enter로 CLI와 같은 명령을 실행한다. 출력은 상자 아래 같은 너비 안에 표시되며 다음 명령이 교체한다. 우측 상단에는 `workingJob` 라벨을 단순 텍스트로 표시한다. 손상된 스냅샷이면 입력 상자 전에 `reset index`와 `quit` 팝업을 연다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다. 화면을 넘는 출력은 PgUp/PgDn으로 스크롤한다. TUI 검색은 파일별 펼치기와 페이지 명령을 제공하며 no-TUI는 전체 결과를 출력한다. FTXUI는 `mini_lexical_search_tui`에만 링크한다. 제출용 Makefile은 아직 구현되지 않았다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
+핵심 로직과 CLI는 `SearchApplication`을 통해 분리되었으며 인덱싱·검색 결과와 진행 이벤트를 UI 없이 제공한다. `start`의 기본 경로는 FTXUI TUI이며 `--no-tui`로 CLI REPL을 실행한다. 현재 TUI는 터미널 중앙에 최대 너비 100열의 흰색 테두리 입력 상자를 두고, Enter로 CLI와 같은 명령을 실행한다. 출력은 상자 아래 같은 너비 안에 표시되며 다음 명령이 교체한다. 우측 상단에는 `workingJob` 라벨을 단순 텍스트로 표시한다. 손상된 스냅샷이면 입력 상자 전에 `reset index`와 `quit` 팝업을 연다. 화면과 입력 규칙은 [TUI 디자인](TUI_DESIGN.md)을 따른다. 화면을 넘는 출력은 PgUp/PgDn으로 스크롤한다. TUI 검색은 파일별 펼치기와 페이지 명령을 제공하며 no-TUI는 전체 결과를 출력한다. FTXUI는 `mini_lexical_search_tui`에만 링크한다. 제출용 Makefile은 루트에서 `make` 한 번으로 실행 파일을 생성한다. 현재 빌드·실행 방법은 [개발 환경](DEVELOPMENT.md)을 따른다.
 
 검색 TUI 도입 후에는 [테스트 가이드](TESTING.md)의 핵심 기능·CLI 검증에 더해 다음을 확인한다.
 
