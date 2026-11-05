@@ -104,7 +104,7 @@ void writeUsage(std::ostream& output, const char* program, OutputMode mode = Out
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
         << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
         << (mode == OutputMode::Tui
-                ? "  /next | /prev      다음·이전 파일 페이지\n  /more <상대 경로>  현재 페이지 파일의 다음 최대 10행 펼치기\n  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 결과 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            프로그램 종료\n"
+                ? "  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 더보기·이전·다음 버튼 실행\n  마우스 클릭        더보기·이전·다음 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            프로그램 종료\n"
                 : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";
@@ -125,9 +125,9 @@ void navigate(SearchApplication& application, Navigation navigation, const std::
                         : application.expandFile(path);
         if (!feedback) writePage(output, page);
         if (feedback) { feedback->display = Display::Results; feedback->page = std::move(page); }
-        const std::string command = navigation == Navigation::Next ? "/next"
-                                  : navigation == Navigation::Previous ? "/prev" : "/more";
-        appendLog("search navigation " + command + " " + path + " page=" + std::to_string(page.number));
+        const std::string action = navigation == Navigation::Next ? "next"
+                                  : navigation == Navigation::Previous ? "prev" : "more";
+        appendLog("search navigation " + action + " " + path + " page=" + std::to_string(page.number));
     } catch (const std::exception& error) {
         output << "error: " << error.what() << '\n';
     }
@@ -225,26 +225,6 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                 output << "error: search failed: " << error.what()
                        << "\nUsage: <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
             }
-        }
-        return LineAction::Ran;
-    }
-    if (command == "/next" || command == "/prev" || command == "/more") {
-        if (mode != OutputMode::Tui) {
-            output << "All results are printed in --no-tui; navigation is only available in TUI.\n";
-            return LineAction::Ran;
-        }
-        try {
-            if (command != "/more" && !arguments.empty()) {
-                throw std::invalid_argument("unexpected arguments for " + command);
-            }
-            if (command == "/more" && arguments.empty()) {
-                throw std::invalid_argument("Usage: /more <relative path>");
-            }
-            navigate(application, command == "/next" ? Navigation::Next
-                                  : command == "/prev" ? Navigation::Previous : Navigation::More,
-                     arguments, output, feedback);
-        } catch (const std::exception& error) {
-            output << "error: " << error.what() << '\n';
         }
         return LineAction::Ran;
     }

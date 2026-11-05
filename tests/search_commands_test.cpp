@@ -31,7 +31,13 @@ int main(int argc, char** argv) {
             cli::handleLine("test", app, command, output, mode);
             return output.str();
         };
-        require(run("/next").find("no active search") != std::string::npos, "missing session accepted");
+        auto navigate = [&](cli::Navigation navigation, const std::string& path = "") {
+            std::ostringstream output;
+            cli::navigate(app, navigation, path, output);
+            return output.str();
+        };
+        require(navigate(cli::Navigation::Next).find("no active search") != std::string::npos,
+                "missing session accepted");
         auto output = run("  hit\t \r");
         require(output.find("=============================\n[0 space.txt] 10+\n1: hit 자료구조\n") != std::string::npos &&
                 output.find(" > 11 more\n") != std::string::npos &&
@@ -39,20 +45,21 @@ int main(int argc, char** argv) {
                 output.find("[5 space.txt]") == std::string::npos &&
                 output.find("Page 1 | previous: no | next: yes") != std::string::npos,
                 "TUI initial output incorrect");
-        require(run("/help").find("/more <상대 경로>") != std::string::npos, "TUI help lacks navigation");
+        require(run("/help").find("선택한 더보기·이전·다음 버튼 실행") != std::string::npos &&
+                run("/help").find("마우스 클릭") != std::string::npos, "TUI help lacks button navigation");
         require(run("/help").find("/search") == std::string::npos &&
                 run("/help").find("/ 없이 입력") != std::string::npos, "help advertises old search command");
-        require(run("/more 0 space.txt").find(" > 1 more\n") != std::string::npos, "space path failed");
-        output = run("/more 0 space.txt");
+        require(navigate(cli::Navigation::More, "0 space.txt").find(" > 1 more\n") != std::string::npos,
+                "space path failed");
+        output = navigate(cli::Navigation::More, "0 space.txt");
         require(output.find("21: hit 자료구조\n") != std::string::npos && output.find(" more") == std::string::npos,
                 "exhausted more displayed");
-        require(run("/more 5 space.txt").find("not on the current page") != std::string::npos,
+        require(navigate(cli::Navigation::More, "5 space.txt").find("not on the current page") != std::string::npos,
                 "off-page path accepted");
-        require(run("/next extra").find("unexpected arguments") != std::string::npos, "extra args accepted");
-        require(run("/more").find("Usage: /more") != std::string::npos, "empty path accepted");
-        require(run("/next").find("[5 space.txt] 10") != std::string::npos, "next command failed");
-        output = run("/prev");
-        require(output.find("21: hit 자료구조\n") != std::string::npos, "prev command lost expanded data");
+        require(navigate(cli::Navigation::Next).find("[5 space.txt] 10") != std::string::npos,
+                "next button navigation failed");
+        output = navigate(cli::Navigation::Previous);
+        require(output.find("21: hit 자료구조\n") != std::string::npos, "previous navigation lost expanded data");
         for (const auto mode : {cli::OutputMode::Tui, cli::OutputMode::NoTui}) {
             for (const auto* blank : {"", " \t\r"}) {
                 std::ostringstream ignored;
@@ -62,8 +69,23 @@ int main(int argc, char** argv) {
             require(run("/search", mode).find("Unknown command: /search") != std::string::npos &&
                     run("/search hit", mode).find("Unknown command: /search hit") != std::string::npos,
                     "removed search command accepted");
+            for (const auto* command : {"/next", "/next extra", "/prev", "/prev extra", "/more",
+                                        "/more 0 space.txt", "/more ./ leading.txt"}) {
+                std::ostringstream rejected;
+                cli::CommandFeedback feedback;
+                require(cli::handleLine("test", app, command, rejected, mode, &feedback) == cli::LineAction::Ran &&
+                        rejected.str() == std::string("Unknown command: ") + command + "\n" &&
+                        feedback.display == cli::Display::Text && !feedback.page && !feedback.newSearch,
+                        "removed navigation command accepted or returned results");
+                const auto page = app.currentPage();
+                require(page.number == 1 && page.files[0].lines.size() == 21,
+                        "removed navigation command changed the search session");
+            }
+            const auto help = run("/help", mode);
+            require(help.find("/next") == std::string::npos && help.find("/prev") == std::string::npos &&
+                    help.find("/more") == std::string::npos, "help advertises removed navigation commands");
         }
-        require(run("/prev").find("21: hit 자료구조\n") != std::string::npos,
+        require(navigate(cli::Navigation::Previous).find("21: hit 자료구조\n") != std::string::npos,
                 "ignored input or unknown command cleared the session");
         for (const auto mode : {cli::OutputMode::Tui, cli::OutputMode::NoTui}) {
             for (const auto* query : {"자료구조", "hit AND 자료구조", "hit OR absent"}) {
@@ -79,22 +101,18 @@ int main(int argc, char** argv) {
             require(output.find("expected AND or OR") != std::string::npos &&
                     output.find("Usage: <keyword>") != std::string::npos &&
                     output.find("/search") == std::string::npos, "invalid query guidance incorrect");
-            for (const auto* keyword : {"search", "index", "help", "more", "next"}) {
+            for (const auto* keyword : {"search", "index", "help", "more", "next", "prev"}) {
                 require(run(keyword, mode).find("No matches.") != std::string::npos,
                         "keyword mistaken for a command");
             }
         }
         run("hit 자료구조");
-        require(run("/prev").find("no active search") != std::string::npos,
+        require(navigate(cli::Navigation::Previous).find("no active search") != std::string::npos,
                 "invalid search retained session");
         output = run("hit", cli::OutputMode::NoTui);
         require(output.find("21: hit 자료구조\n") != std::string::npos && output.find("[6 space.txt] 10") != std::string::npos &&
                 output.find(" more") == std::string::npos && output.find("Page ") == std::string::npos,
                 "NoTUI output truncated or paged");
-        require(run("/next", cli::OutputMode::NoTui).find("only available in TUI") != std::string::npos,
-                "NoTUI navigation accepted");
-        require(run("/help", cli::OutputMode::NoTui).find("/more <") == std::string::npos,
-                "NoTUI help advertises navigation");
         fs::remove(root / "docs/0 space.txt");
         output = run("hit");
         require(output.find("[0 space.txt] 10+\nwarning: cannot open") != std::string::npos &&
@@ -115,20 +133,20 @@ int main(int argc, char** argv) {
         cli::navigate(app, cli::Navigation::More, " leading.txt", stream, &feedback);
         require(feedback.page && feedback.page->files[0].lines.size() == 20 && !feedback.newSearch,
                 "button navigation stripped significant leading whitespace");
-        cli::handleLine("test", app, "/more ./ leading.txt", stream, cli::OutputMode::Tui, &feedback);
+        cli::navigate(app, cli::Navigation::More, " leading.txt", stream, &feedback);
         require(feedback.page && feedback.page->files[0].lines.size() == 21,
-                "explicit relative path did not expand leading-whitespace file");
+                "button navigation did not finish expanding leading-whitespace file");
         cli::handleLine("test", app, "/help", stream, cli::OutputMode::Tui, &feedback);
         require(feedback.display == cli::Display::Text && !feedback.page && !feedback.newSearch,
                 "help left stale search feedback");
-        cli::handleLine("test", app, "/prev", stream, cli::OutputMode::Tui, &feedback);
+        cli::navigate(app, cli::Navigation::Previous, "", stream, &feedback);
         require(feedback.display == cli::Display::Results && feedback.page->files[0].lines.size() == 21,
                 "help should preserve expandable search session");
         cli::handleLine("test", app, " ", stream, cli::OutputMode::Tui, &feedback);
         require(feedback.display == cli::Display::Unchanged && !feedback.page, "ignored input has stale feedback");
         app.clearSearch(); // Esc home action.
         require(app.ready(), "home must retain the index");
-        cli::handleLine("test", app, "/next", stream, cli::OutputMode::Tui, &feedback);
+        cli::navigate(app, cli::Navigation::Next, "", stream, &feedback);
         require(feedback.display == cli::Display::Text && !feedback.page, "home retained pageable results");
         cli::handleLine("test", app, "hit", stream, cli::OutputMode::Tui, &feedback);
         require(feedback.page && feedback.page->files[0].lines.size() == 10, "search after home retained expansion");

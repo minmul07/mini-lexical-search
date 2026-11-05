@@ -27,7 +27,7 @@ ctest --test-dir build --output-on-failure
 | 매칭 행 | `matching_lines_test` | 원본 줄 번호·줄바꿈, 출력 한도, 잘못된 줄 목록·읽기 실패 |
 | 인덱싱·저장 | `indexer_test` | v4 루트 왕복·구버전 거부·루트 변경·형식 검증, 증분 갱신, 변경 없는 파일 보존, 저장 실패 복구 |
 | 공통 Application | `search_application_test` | 인덱싱·재로드·검색, 진행 이벤트, 파일 트리순·중복 제거·페이지·펼치기, 오류 복구·세션 무효화·상태 라벨 |
-| 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 명령, 출력 형식·파일 건수·more·공백 경로·경계·읽기 경고·구조화된 피드백 |
+| 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 검색·탐색 명령 거부, 출력 형식·파일 건수·버튼 탐색·공백 경로·경계·읽기 경고·구조화된 피드백 |
 | TUI 결과 모델 | `result_view_test` | 1~3줄 발췌·셀 너비·토큰 강조·한글/이모지/결합 문자, 행 선택·스크롤·리사이즈·홈 초기화 |
 | CLI 통합 | `cli_test` | 실행 옵션·명령, 실제 저장·재실행, 파일별 전체 출력·시간·로그, 손상 스냅샷·입력 오류 처리 |
 
