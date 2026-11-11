@@ -116,7 +116,8 @@ std::string clipped(const std::string& text, int width) {
 
 void ResultView::home() { *this = ResultView{}; }
 
-void ResultView::showResults(SearchPage result, const std::string& executedQuery, const std::string& time) {
+void ResultView::showResults(SearchPage result, const std::string& executedQuery, const std::string& time,
+                             int scrollOffset) {
     mode = ViewMode::Results;
     page = std::move(result);
     query = executedQuery;
@@ -124,7 +125,7 @@ void ResultView::showResults(SearchPage result, const std::string& executedQuery
     message_.clear();
     SimpleTokenizer tokenizer;
     terms_ = parseQuery(query, tokenizer).terms;
-    rows_.clear(); items_.clear(); selected_ = -1; offset_ = 0;
+    rows_.clear(); items_.clear(); selected_ = -1; offset_ = std::max(0, scrollOffset);
 }
 
 void ResultView::showText(std::string message, const std::string& executedQuery) {
@@ -231,13 +232,14 @@ void ResultView::reveal() {
     }
     scroll(0);
 }
-void ResultView::select(int index) {
+void ResultView::select(int index, bool revealSelection) {
     if (items_.empty()) return;
     selected_ = std::clamp(index, 0, static_cast<int>(items_.size()) - 1);
-    reveal();
+    if (revealSelection) reveal();
 }
-void ResultView::select(const ItemKey& key) {
-    for (std::size_t i = 0; i < items_.size(); ++i) if (items_[i].key == key) { select(static_cast<int>(i)); return; }
+void ResultView::select(const ItemKey& key, bool revealSelection) {
+    for (std::size_t i = 0; i < items_.size(); ++i)
+        if (items_[i].key == key) { select(static_cast<int>(i), revealSelection); return; }
 }
 void ResultView::move(int delta) { select(selected_ + delta); }
 void ResultView::scroll(int rows) {

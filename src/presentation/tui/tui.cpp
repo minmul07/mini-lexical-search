@@ -222,14 +222,15 @@ void run(const char* program, SearchApplication& application) {
         mouseMode = false;
         return false;
     });
-    auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text) {
+    auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text,
+                             int scrollOffset = 0) {
         if (!indexRunning) indexModel.clear();
         if (feedback.newSearch) {
             sessionQuery = feedback.query;
             sessionElapsed = feedback.elapsed;
         }
         if (feedback.display == cli::Display::Results && feedback.page) {
-            view.showResults(std::move(*feedback.page), sessionQuery, sessionElapsed);
+            view.showResults(std::move(*feedback.page), sessionQuery, sessionElapsed, scrollOffset);
         } else if (feedback.display == cli::Display::Text) {
             view.showText(text, feedback.newSearch ? feedback.query : "");
         }
@@ -241,6 +242,7 @@ void run(const char* program, SearchApplication& application) {
         if (key.kind == ItemKind::Line) return;
         std::optional<ItemKey> firstNew;
         if (key.kind == ItemKind::More) {
+            const int scrollOffset = view.offset();
             for (const auto& file : view.page.files) if (file.relativePath == key.path) {
                 // The next matching row number is known after expanding the page.
                 const auto count = file.lines.size();
@@ -253,7 +255,8 @@ void run(const char* program, SearchApplication& application) {
                             firstNew = ItemKey{ItemKind::Line, key.path, expanded.lines[count].number};
                     }
                 }
-                applyFeedback(feedback, output.str());
+                // Keep the rows above the button in place while the file expands.
+                applyFeedback(feedback, output.str(), scrollOffset);
                 break;
             }
         } else {
@@ -265,8 +268,8 @@ void run(const char* program, SearchApplication& application) {
             applyFeedback(feedback, output.str());
         }
         setFocus(view.mode == ViewMode::Results);
-        if (firstNew) view.select(*firstNew);
-        else if (view.mode == ViewMode::Results) view.select(0);
+        if (firstNew) view.select(*firstNew, false);
+        else if (view.mode == ViewMode::Results) view.select(0, key.kind != ItemKind::More);
     };
     auto component = ftxui::Renderer(focusGroup, [&] {
         if (showPrompt) return blackBackground(ftxui::filler());
