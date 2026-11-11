@@ -22,6 +22,11 @@ namespace {
 constexpr int kBorderColumns = 2;
 using Clock = std::chrono::steady_clock;
 
+// 전체 화면을 같은 배경색으로 칠한다.
+ftxui::Element blackBackground(ftxui::Element element) {
+    return ftxui::bgcolor(ftxui::Color::RGB(0, 0, 0), std::move(element));
+}
+
 bool isQuitCommand(const std::string& line) {
     const auto first = line.find_first_not_of(" \t\r\n\v\f");
     if (first == std::string::npos) return false;
@@ -189,12 +194,12 @@ void run(const char* program, SearchApplication& application) {
                 paintChoice(quit, 1, quitBox),
             }),
         });
-        return ftxui::hbox({
+        return blackBackground(ftxui::hbox({
                    ftxui::text(" "),
                    ftxui::vbox({ftxui::text(""), std::move(dialog), ftxui::text("")}),
                    ftxui::text(" "),
                }) |
-               ftxui::size(ftxui::WIDTH, ftxui::GREATER_THAN, 52) | ftxui::border;
+               ftxui::size(ftxui::WIDTH, ftxui::GREATER_THAN, 52) | ftxui::border);
     });
     prompt |= ftxui::CatchEvent([&](ftxui::Event event) {
         if (event == ftxui::Event::Escape) return true;
@@ -264,7 +269,7 @@ void run(const char* program, SearchApplication& application) {
         else if (view.mode == ViewMode::Results) view.select(0);
     };
     auto component = ftxui::Renderer(focusGroup, [&] {
-        if (showPrompt) return ftxui::filler();
+        if (showPrompt) return blackBackground(ftxui::filler());
         geometry();
         const auto now = Clock::now();
         const auto delta = std::clamp(std::chrono::duration<float>(now - lastFrame).count(),
@@ -337,12 +342,12 @@ void run(const char* program, SearchApplication& application) {
                 }) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, homeLayout.fieldWidth),
                 ftxui::filler(),
             });
-            return ftxui::dbox({
+            return blackBackground(ftxui::dbox({
                 std::move(fieldLayer),
                 std::move(detailLayer),
                 ftxui::vbox({ftxui::text(clipped(workingJob().label(), ftxui::Terminal::Size().dimx)) |
                                  ftxui::align_right, ftxui::filler()}),
-            });
+            }));
         }
         ftxui::Elements column{std::move(field)};
         if (!view.query.empty()) {
@@ -411,7 +416,8 @@ void run(const char* program, SearchApplication& application) {
         }
         column.push_back(ftxui::text(clipped("↑↓: 검색창/결과  Space/Enter: 실행  Esc: 홈  | " + workingJob().label(), areaWidth)) |
                          ftxui::dim);
-        return ftxui::hbox({ftxui::text("  "), ftxui::vbox(std::move(column)), ftxui::filler()});
+        return blackBackground(
+            ftxui::hbox({ftxui::text("  "), ftxui::vbox(std::move(column)), ftxui::filler()}));
     });
     component |= ftxui::CatchEvent([&](ftxui::Event event) {
         if (event == ftxui::Event::Custom) {
