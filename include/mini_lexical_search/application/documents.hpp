@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -7,6 +8,9 @@
 #include "mini_lexical_search/domain/tokenizer.hpp"
 
 namespace mini_lexical_search {
+
+// 완료한 항목 수와 전체 항목 수를 전달한다. 진행 중인 항목은 완료로 세지 않는다.
+using DocumentProgress = std::function<void(std::size_t completed, std::size_t total)>;
 
 struct IndexStats {
     std::size_t notUpdated = 0;
@@ -41,20 +45,24 @@ using TokenSink = std::function<void(DocumentId, std::uint32_t, const std::strin
 // 선택한 디렉터리와 기존 문서 테이블을 비교하여 각 문서를 분류한다.
 // 디스크 기록이나 토큰화는 수행하지 않는다.
 IndexWork prepareIndex(const std::filesystem::path& directory,
-                       const std::vector<Document>& previous);
+                       const std::vector<Document>& previous,
+                       const DocumentProgress& progress = {});
 
 // JSON 파일에서 기존 테이블을 로드한 뒤 동일한 비교를 수행한다.
 // 파일이 없으면 빈 테이블로 취급하고 항상 변경된 작업으로 표시한다.
 IndexWork prepareIndex(const std::filesystem::path& directory,
-                       const std::filesystem::path& output);
+                       const std::filesystem::path& output,
+                       const DocumentProgress& progress = {});
 
 // 선택한 문서를 줄 단위로 토큰화하여 `tokenCount`를 기록하고,
 // `sink`가 설정되어 있으면 모든 토큰을 전달한다. 지정된 문서만 읽으며,
 // 호출자는 변경 없는 문서를 선택 대상에서 제외한다.
+// `progress`는 문서 하나를 마칠 때마다 완료 수와 전체 선택 수를 전달한다.
 TokenizeStats tokenizeDocuments(std::vector<Document>& documents,
                                 const std::vector<std::size_t>& selection,
                                 Tokenizer& tokenizer,
-                                const TokenSink& sink);
+                                const TokenSink& sink,
+                                const DocumentProgress& progress = {});
 
 // SimpleTokenizer로 전체 파이프라인을 실행한다. 문서 테이블을 동기화하고
 // 변경 문서를 토큰화하며, 테이블이 변경되었으면 저장한다.

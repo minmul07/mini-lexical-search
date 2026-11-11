@@ -2,22 +2,33 @@
 
 #include "mini_lexical_search/presentation/cli/cli.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
+#include "mini_lexical_search/presentation/tui/index_progress.hpp"
 #include "mini_lexical_search/presentation/tui/input_layout.hpp"
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <exception>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 
 #include "ftxui.hpp"
 
 namespace mini_lexical_search::tui {
 namespace {
 
-constexpr int kMaxInnerWidth = 100;
 constexpr int kBorderColumns = 2;
+using Clock = std::chrono::steady_clock;
+
+bool isQuitCommand(const std::string& line) {
+    const auto first = line.find_first_not_of(" \t\r\n\v\f");
+    if (first == std::string::npos) return false;
+    const auto last = line.find_last_not_of(" \t\r\n\v\f");
+    const auto command = line.substr(first, last - first + 1);
+    return command == "/exit" || command == "/quit";
+}
 
 int lineCount(const std::string& content) {
     int lines = 1;
@@ -44,6 +55,8 @@ std::string logicalText(const std::string& content) {
 
 void run(const char* program, SearchApplication& application) {
     auto screen = ftxui::ScreenInteractive::Fullscreen();
+    // 인덱싱 중에는 종료를 미룰 수 있도록 Ctrl+C 처리를 직접 맡는다.
+    screen.ForceHandleCtrlC(false);
     std::string content;
     int cursor = 0;
     ResultView view;
@@ -57,15 +70,17 @@ void run(const char* program, SearchApplication& application) {
     ftxui::Box footerBox;
     struct Hit { ftxui::Box box; int item; };
     std::vector<Hit> hits;
+    HomeGeometry homeLayout;
     auto geometry = [&] {
         const auto size = ftxui::Terminal::Size();
         areaWidth = std::max(1, size.dimx - 4);
-        fieldWidth = view.mode == ViewMode::Home
-                         ? std::max(1, std::min(kMaxInnerWidth, size.dimx - kBorderColumns))
-                         : std::max(1, areaWidth - kBorderColumns);
+        fieldWidth = view.mode == ViewMode::Home ? homeFieldWidth(size.dimx)
+                                                 : std::max(1, areaWidth - kBorderColumns);
         reflowInput(content, cursor, fieldWidth);
         inputHeight = std::min({3, lineCount(content), std::max(1, size.dimy - 6)});
-        if (view.mode != ViewMode::Home) {
+        if (view.mode == ViewMode::Home) {
+            homeLayout = homeGeometry(size.dimx, size.dimy, inputHeight);
+        } else {
             const int queryRows = view.query.empty() ? 0 : 1;
             const int pageRows = view.mode == ViewMode::Results ? 1 : 0;
             view.layout(areaWidth, std::max(1, size.dimy - inputHeight - 2 - queryRows - pageRows - 1));
@@ -73,6 +88,17 @@ void run(const char* program, SearchApplication& application) {
     };
     bool showPrompt = !application.ready();
     std::string promptError;
+    bool indexRunning = false;
+    bool exitWhenIndexed = false;
+    bool fillFinishing = false;
+    bool fillFading = false;
+    float fill = 0.0F;
+    float fillOpacity = 1.0F;
+    Clock::time_point fillFadeStarted{};
+    Clock::time_point lastFrame = Clock::now();
+    constexpr auto kFillFadeDuration = std::chrono::milliseconds(750);
+    IndexProgressModel indexModel;
+    std::jthread indexWorker;
     bool mouseMode = false;
     int mouseIndex = -1;
     ftxui::Box resetBox;
@@ -85,18 +111,55 @@ void run(const char* program, SearchApplication& application) {
         view.resultsFocused = results;
         (results ? resultFocus : input)->TakeFocus();
     };
+    auto startIndex = [&](bool rebuild, const std::string& directory) {
+        if (indexRunning) return;
+        indexRunning = true;
+        exitWhenIndexed = false;
+        fillFinishing = false;
+        fillFading = false;
+        fill = 0.0F;
+        fillOpacity = 1.0F;
+        fillFadeStarted = {};
+        view.home();
+        sessionQuery.clear();
+        sessionElapsed.clear();
+        content.clear();
+        cursor = 0;
+        setFocus(false);
+        indexModel.begin();
+        geometry();
+        indexWorker = std::jthread([&, rebuild, directory](std::stop_token) {
+            auto lastPost = Clock::now();
+            const auto notify = [&](const IndexProgress& event) {
+                indexModel.apply(event);
+                const auto now = Clock::now();
+                if (event.stage == IndexStage::MetadataProgress ||
+                    event.stage == IndexStage::TokenizationProgress) {
+                    if (now - lastPost < std::chrono::milliseconds(33)) return;
+                }
+                lastPost = now;
+                screen.PostEvent(ftxui::Event::Custom);
+            };
+            try {
+                const auto result = rebuild ? application.rebuildIndex(directory, notify)
+                                            : application.index(directory, notify);
+                indexModel.finish(result);
+            } catch (const std::exception& error) {
+                indexModel.fail(error.what());
+            } catch (...) {
+                indexModel.fail("unknown error");
+            }
+            screen.PostEvent(ftxui::Event::Custom);
+        });
+    };
     ftxui::ButtonOption action;
     action.transform = [](const ftxui::EntryState& state) { return ftxui::text(state.label); };
     auto resetIndex = ftxui::Button(
         "reset index",
         [&] {
-            try {
-                application.rebuildIndex("./documents");
-                promptError.clear();
-                showPrompt = false;
-            } catch (const std::exception& error) {
-                promptError = error.what();
-            }
+            showPrompt = false;
+            promptError.clear();
+            startIndex(true, "./documents");
         },
         action);
     auto quit = ftxui::Button("quit", [&] { screen.Exit(); }, action);
@@ -155,6 +218,7 @@ void run(const char* program, SearchApplication& application) {
         return false;
     });
     auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text) {
+        if (!indexRunning) indexModel.clear();
         if (feedback.newSearch) {
             sessionQuery = feedback.query;
             sessionElapsed = feedback.elapsed;
@@ -202,13 +266,80 @@ void run(const char* program, SearchApplication& application) {
     auto component = ftxui::Renderer(focusGroup, [&] {
         if (showPrompt) return ftxui::filler();
         geometry();
-        auto field = input->Render() | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, fieldWidth) |
-                     ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, inputHeight) |
-                     ftxui::borderStyled(ftxui::Color::White) | ftxui::reflect(inputBox);
+        const auto now = Clock::now();
+        const auto delta = std::clamp(std::chrono::duration<float>(now - lastFrame).count(),
+                                      0.0F, 0.1F);
+        lastFrame = now;
+        const auto indexDisplay = indexModel.display();
+        if (indexRunning) {
+            if (fill < indexDisplay.target) {
+                fill = std::min(indexDisplay.target, fill + std::max(0.015F, delta * 1.5F));
+            } else if (fill > indexDisplay.target) {
+                fill = std::max(indexDisplay.target, fill - delta * 2.0F);
+            }
+            if (fill < indexDisplay.target - 0.001F) ftxui::animation::RequestAnimationFrame();
+        } else if (fillFinishing) {
+            if (fill < 1.0F) {
+                fill = std::min(1.0F, fill + std::max(0.02F, delta * 2.0F));
+                ftxui::animation::RequestAnimationFrame();
+            } else {
+                fill = 1.0F;
+                fillFinishing = false;
+                fillFading = true;
+                fillFadeStarted = now;
+                fillOpacity = 1.0F;
+                ftxui::animation::RequestAnimationFrame();
+            }
+        } else if (fillFading) {
+            const auto elapsed = std::chrono::duration<float>(now - fillFadeStarted).count();
+            const auto duration = std::chrono::duration<float>(kFillFadeDuration).count();
+            const auto progress = std::clamp(elapsed / duration, 0.0F, 1.0F);
+            fillOpacity = 1.0F - progress;
+            if (progress >= 1.0F) {
+                fillFading = false;
+                fill = 0.0F;
+                fillOpacity = 1.0F;
+            } else {
+                ftxui::animation::RequestAnimationFrame();
+            }
+        }
+        auto inner = input->Render() | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, fieldWidth) |
+                     ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, inputHeight);
+        if ((indexRunning || fillFinishing || fillFading) && fill > 0.0F) {
+            inner = progressFill(std::move(inner), fill, fillOpacity);
+        }
+        auto field = std::move(inner) | ftxui::borderStyled(ftxui::Color::White) |
+                     ftxui::reflect(inputBox);
         if (view.mode == ViewMode::Home) {
             hits.clear();
+            ftxui::Elements details;
+            if (homeLayout.detailHeight > 0 && !indexDisplay.lines.empty()) {
+                const int count = std::min(homeLayout.detailHeight,
+                                           static_cast<int>(indexDisplay.lines.size()));
+                const int start = static_cast<int>(indexDisplay.lines.size()) - count;
+                for (int i = 0; i < count; ++i) {
+                    details.push_back(ftxui::text(
+                        clipped(indexDisplay.lines[static_cast<std::size_t>(start + i)],
+                                homeLayout.fieldWidth)));
+                }
+            }
+            auto fieldLayer = ftxui::vbox({
+                ftxui::text("") | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, homeLayout.boxTop),
+                field | ftxui::hcenter,
+                ftxui::filler(),
+            });
+            auto detailLayer = ftxui::hbox({
+                ftxui::text("") | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, homeLayout.fieldLeft),
+                ftxui::vbox({
+                    ftxui::text("") | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, homeLayout.detailTop),
+                    ftxui::vbox(std::move(details)) | ftxui::dim,
+                    ftxui::filler(),
+                }) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, homeLayout.fieldWidth),
+                ftxui::filler(),
+            });
             return ftxui::dbox({
-                field | ftxui::center,
+                std::move(fieldLayer),
+                std::move(detailLayer),
                 ftxui::vbox({ftxui::text(clipped(workingJob().label(), ftxui::Terminal::Size().dimx)) |
                                  ftxui::align_right, ftxui::filler()}),
             });
@@ -283,12 +414,50 @@ void run(const char* program, SearchApplication& application) {
         return ftxui::hbox({ftxui::text("  "), ftxui::vbox(std::move(column)), ftxui::filler()});
     });
     component |= ftxui::CatchEvent([&](ftxui::Event event) {
-        if (event == ftxui::Event::CtrlC) return false;
+        if (event == ftxui::Event::Custom) {
+            if (indexRunning) {
+                const auto status = indexModel.display();
+                if (status.finished) {
+                    indexRunning = false;
+                    if (status.failed) {
+                        fillFinishing = false;
+                        fillFading = false;
+                        fill = 0.0F;
+                        fillOpacity = 1.0F;
+                        if (!application.ready()) {
+                            promptError = status.error;
+                            showPrompt = true;
+                        }
+                    } else {
+                        fillFinishing = true;
+                        fillFading = false;
+                        fillOpacity = 1.0F;
+                        fillFadeStarted = {};
+                    }
+                    geometry();
+                    if (exitWhenIndexed) screen.Exit();
+                }
+            }
+            return true;
+        }
+        if (event == ftxui::Event::CtrlC) {
+            if (indexRunning) {
+                exitWhenIndexed = true;
+            } else {
+                screen.Exit();
+            }
+            return true;
+        }
         geometry();
         if (event == ftxui::Event::Escape) {
             if (view.mode != ViewMode::Home) {
                 application.clearSearch();
                 view.home();
+                indexModel.clear();
+                fill = 0.0F;
+                fillFinishing = false;
+                fillFading = false;
+                fillOpacity = 1.0F;
                 sessionQuery.clear();
                 sessionElapsed.clear();
                 content.clear();
@@ -356,9 +525,19 @@ void run(const char* program, SearchApplication& application) {
         }
         if (event == ftxui::Event::Return) {
             const std::string line = logicalText(content);
+            if (indexRunning) {
+                if (isQuitCommand(line)) {
+                    exitWhenIndexed = true;
+                    content.clear();
+                    cursor = 0;
+                }
+                return true;
+            }
             std::ostringstream output;
             cli::CommandFeedback feedback;
-            const auto action = cli::handleLine(program, application, line, output, cli::OutputMode::Tui, &feedback);
+            const auto action = cli::handleLine(
+                program, application, line, output, cli::OutputMode::Tui, &feedback,
+                [&](const std::string& directory) { startIndex(false, directory); });
             if (action == cli::LineAction::Quit) screen.Exit();
             else if (action == cli::LineAction::Ran) {
                 if (feedback.newSearch) {

@@ -77,7 +77,7 @@ TUI와 CLI는 같은 입력 처리를 공유한다. 빈 입력은 무시하고, 
 | `src/application/` | `SearchApplication`의 인덱스 상태, 인덱싱·검색 절차, 진행 이벤트·로그 |
 | `src/infrastructure/` | 문서 수집·읽기, SHA-256, JSON·바이너리 저장과 로드 |
 | `src/presentation/cli/` | 공통 명령 처리와 CLI 입출력 |
-| `src/presentation/tui/` | FTXUI 화면·입력, 구조화된 명령 결과 표시, 발췌·강조·선택·스크롤 모델 |
+| `src/presentation/tui/` | FTXUI 화면·입력, 구조화된 명령 결과 표시, 인덱싱 작업 스레드·진행 표시, 발췌·강조·선택·스크롤 모델 |
 | `tests/` | CTest 기반 자동 테스트 |
 | `benchmarks/` | 수동 인덱스·검색 성능 측정 |
 
@@ -86,14 +86,14 @@ Infrastructure는 Domain에 의존하며, Domain은 다른 계층에 의존하�
 Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타깃에만 연결한다.
 
 공통 API는 `application/search_application.hpp`의 `SearchApplication`이다.
-`index`는 인덱싱과 단계별 진행 이벤트를, `search`는 첫 `SearchPage`를 반환한다.
+`index`는 인덱싱과 단계별 진행 이벤트를, `search`는 첫 `SearchPage`를 반환한다. 진행 이벤트는 메타데이터·토큰화의 완료 수/전체 수와 저장 단계를 포함한다.
 `currentPage`, `nextPage`, `previousPage`, `expandFile`은 파일 그룹·전체 건수·읽은 행·경고와 페이지 상태를 제공한다.
 `visitAllResults`는 파일 시작·매칭 행·읽기 경고 콜백으로 전체 결과를 전달하며 원문을 캐시하지 않는다. 콜백 예외는 호출자에게 전달한다.
 `clearSearch` 또는 새 검색·인덱싱 시작은 세션과 Posting 참조를 해제한다. 세션은 Application이 단독 소유한다.
 문서 ID만 먼저 계산·정렬하고, 방문한 파일의 Posting 행을 커서로 병합한다. 전체 후보의 매칭 행 벡터를 복사하지 않는다.
 파일별 전체 행 수를 계산한 뒤 표시할 원문만 읽고, 펼치기는 직전 바이트 위치에서 이어 읽는다. 방문한 페이지의 원문과 펼친 상태는 세션 동안 캐시한다.
 기존 `QueryProcessor::process`와 Top-K는 독립 알고리즘·테스트용으로 유지하며 실제 UI 검색 경로는 `matchingDocuments`를 사용한다.
-진행·검색 콜백에서 앱을 재호출하거나 여러 스레드에서 동시에 접근하지 않는다.
+`SearchApplication`은 단일 스레드 계약을 유지한다. TUI는 인덱싱을 worker 스레드에서 실행하는 동안 검색·탐색 명령을 실행하지 않는다. 진행 콜백은 worker 스레드에서 호출되므로 UI를 직접 수정하지 않고, 동기화된 `IndexProgressModel`을 통해 화면에 전달한다. `WorkingJob` 라벨은 mutex로 보호한다.
 
 ## 핵심 동작과 주의 사항
 

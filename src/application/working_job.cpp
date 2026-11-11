@@ -5,10 +5,12 @@
 namespace mini_lexical_search {
 
 void WorkingJob::set(std::string label) {
+    const std::lock_guard lock(mutex_);
     label_ = std::move(label);
 }
 
-const std::string& WorkingJob::label() const {
+std::string WorkingJob::label() const {
+    const std::lock_guard lock(mutex_);
     return label_;
 }
 

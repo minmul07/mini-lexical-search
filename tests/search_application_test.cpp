@@ -43,14 +43,43 @@ void requireFailure(Action action, const std::string& message) {
     require(failed, message);
 }
 
+bool isMilestone(IndexStage stage) {
+    return stage == IndexStage::MetadataStarted || stage == IndexStage::MetadataCompleted ||
+           stage == IndexStage::TokenizationStarted || stage == IndexStage::TokenizationCompleted;
+}
+
+std::vector<IndexProgress> milestones(const std::vector<IndexProgress>& events) {
+    std::vector<IndexProgress> result;
+    for (const auto& event : events) {
+        if (isMilestone(event.stage)) result.push_back(event);
+    }
+    return result;
+}
+
+const IndexProgress* findStage(const std::vector<IndexProgress>& events, IndexStage stage) {
+    for (const auto& event : events) {
+        if (event.stage == stage) return &event;
+    }
+    return nullptr;
+}
+
+const IndexProgress* findLastStage(const std::vector<IndexProgress>& events, IndexStage stage) {
+    const IndexProgress* result = nullptr;
+    for (const auto& event : events) {
+        if (event.stage == stage) result = &event;
+    }
+    return result;
+}
+
 void requireStages(const std::vector<IndexProgress>& events) {
     const std::vector<IndexStage> expected{
         IndexStage::MetadataStarted, IndexStage::MetadataCompleted,
         IndexStage::TokenizationStarted, IndexStage::TokenizationCompleted};
-    require(events.size() == expected.size(), "wrong event count");
-    for (std::size_t i = 0; i < events.size(); ++i) {
-        require(events[i].stage == expected[i], "wrong event order");
-        require(events[i].elapsedMicroseconds >= 0, "negative elapsed time");
+    const auto actual = milestones(events);
+    require(actual.size() == expected.size(), "wrong milestone event count");
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        require(actual[i].stage == expected[i], "wrong event order");
+        require(actual[i].elapsedMicroseconds >= 0, "negative elapsed time");
     }
 }
 
@@ -72,7 +101,33 @@ void testSession(const fs::path& root) {
     require(workingJob().label() == "Ready", "successful indexing must be ready");
     require(update.metadata.added == 2 && update.tokens.documents == 2 && update.tokens.tokens == 9,
             "wrong indexing counters");
-    require(events[1].metadata.added == 2 && events[3].tokens.tokens == 9, "event counters missing");
+    const auto* metadataCompleted = findStage(events, IndexStage::MetadataCompleted);
+    const auto* tokenizationCompleted = findStage(events, IndexStage::TokenizationCompleted);
+    require(metadataCompleted && tokenizationCompleted &&
+                metadataCompleted->metadata.added == 2 && tokenizationCompleted->tokens.tokens == 9,
+            "event counters missing");
+    const auto* metadataEnd = findLastStage(events, IndexStage::MetadataProgress);
+    require(metadataEnd && metadataEnd->completed == 2 && metadataEnd->total == 2,
+            "metadata progress missing");
+    const auto* tokenEnd = findLastStage(events, IndexStage::TokenizationProgress);
+    require(tokenEnd && tokenEnd->completed == 2 && tokenEnd->total == 2 &&
+                findStage(events, IndexStage::SaveStarted) &&
+                findStage(events, IndexStage::SaveCompleted),
+            "tokenization/save progress missing");
+    std::size_t previousMetadata = 0;
+    std::size_t previousTokens = 0;
+    for (const auto& event : events) {
+        if (event.stage == IndexStage::MetadataProgress) {
+            require(event.completed >= previousMetadata && event.completed <= event.total,
+                    "metadata progress is not monotonic");
+            previousMetadata = event.completed;
+        }
+        if (event.stage == IndexStage::TokenizationProgress) {
+            require(event.completed >= previousTokens && event.completed <= event.total,
+                    "tokenization progress is not monotonic");
+            previousTokens = event.completed;
+        }
+    }
 
     const auto results = search(app, "ALPHA");
     require(results.size() == 2 && results[0].document.id < results[1].document.id,
@@ -97,8 +152,11 @@ void testSession(const fs::path& root) {
     events.clear();
     const auto unchanged = reopened.index(documents, collect);
     requireStages(events);
+    const auto* unchangedTokenization = findStage(events, IndexStage::TokenizationCompleted);
     require(unchanged.metadata.notUpdated == 2 && unchanged.tokens.documents == 0 &&
-            events[3].elapsedMicroseconds == 0, "unchanged indexing failed");
+                unchangedTokenization && unchangedTokenization->elapsedMicroseconds == 0,
+            "unchanged indexing failed");
+    require(!findStage(events, IndexStage::SaveStarted), "unchanged indexing saved a snapshot");
     require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
             "unchanged indexing rewrote snapshot");
 
@@ -117,7 +175,10 @@ void testSession(const fs::path& root) {
             if (event.stage == IndexStage::MetadataCompleted) fs::remove(transient);
         });
     }, "missing tokenization input accepted");
-    require(events.size() == 3 && events.back().stage == IndexStage::TokenizationStarted,
+    const auto failedMilestones = milestones(events);
+    require(failedMilestones.size() == 3 &&
+                failedMilestones.back().stage == IndexStage::TokenizationStarted &&
+                !findStage(events, IndexStage::TokenizationCompleted),
             "failed tokenization emitted completion");
     require(read(snapshot) == saved && search(reopened, "alpha").size() == 2,
             "tokenization failure changed session");
@@ -130,6 +191,15 @@ void testSession(const fs::path& root) {
     require(read(snapshot) == saved && search(reopened, "alpha")[0].totalMatchingLines == 2 &&
             search(reopened, "replacement").empty(), "save failure did not restore postings");
     fs::remove(snapshot.string() + ".tmp");
+
+    // A save-stage observer exception must restore postings that were already merged.
+    requireFailure([&] {
+        reopened.index(documents, [](const IndexProgress& event) {
+            if (event.stage == IndexStage::SaveStarted) throw std::runtime_error("save observer");
+        });
+    }, "save observer exception swallowed");
+    require(read(snapshot) == saved && search(reopened, "replacement").empty(),
+            "save observer failure changed session");
 
     // A UI observer exception after rebuilding also restores the saved index.
     requireFailure([&] {

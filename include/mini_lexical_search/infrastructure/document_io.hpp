@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -7,8 +8,12 @@
 
 namespace mini_lexical_search {
 
+// 파일 수집·해시 완료 수와 전체 수를 전달한다. 전체 수는 수집 목록을 만든 뒤 알 수 있다.
+using DocumentCollectionProgress = std::function<void(std::size_t completed, std::size_t total)>;
+
 // .txt/.md 파일을 재귀적으로 수집하고 토큰화 없이 원본 바이트의 해시를 계산한다.
-std::vector<Document> collectDocuments(const std::filesystem::path& directory);
+std::vector<Document> collectDocuments(const std::filesystem::path& directory,
+                                       const DocumentCollectionProgress& progress = {});
 
 // 해시가 없는 기존 형식의 항목을 포함하여 문서 테이블을 읽는다.
 std::vector<Document> loadDocuments(const std::filesystem::path& input);

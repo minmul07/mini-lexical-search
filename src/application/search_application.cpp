@@ -57,18 +57,33 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
             }
             if (progress) progress(event);
         };
-        notify({IndexStage::MetadataStarted, 0, {}, {}});
+        notify({IndexStage::MetadataStarted, 0, {}, {}, 0, 0});
         const auto metadataStarted = Clock::now();
-        auto work = prepareIndex(directory, snapshot_.documents);
+        auto work = prepareIndex(directory, snapshot_.documents,
+                                 [&](std::size_t completed, std::size_t total) {
+                                     notify({IndexStage::MetadataProgress, 0, {}, {}, completed, total});
+                                 });
         const auto metadataUs = elapsedMicroseconds(metadataStarted);
-        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}});
+        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}, 0, 0});
 
-        notify({IndexStage::TokenizationStarted, 0, {}, {}});
+        notify({IndexStage::TokenizationStarted, 0, {}, {}, 0, work.toTokenize.size()});
         const auto tokenizeStarted = Clock::now();
-        const auto tokens = applyIndexWork(work, snapshot_.index, tokenizer_);
+        const auto tokens = applyIndexWork(
+            work, snapshot_.index, tokenizer_,
+            [&](std::size_t completed, std::size_t total) {
+                notify({IndexStage::TokenizationProgress, 0, {}, {}, completed, total});
+            });
         const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
+        const auto root = std::filesystem::absolute(directory).lexically_normal();
+        const bool save = work.changed || root != snapshot_.root;
         try {
-            notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens});
+            notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens, 0, 0});
+            if (save) {
+                notify({IndexStage::SaveStarted, 0, {}, {}, 0, 0});
+                const auto saveStarted = Clock::now();
+                commitIndexSnapshot(std::move(work.documents), root, snapshot_, snapshotPath_);
+                notify({IndexStage::SaveCompleted, elapsedMicroseconds(saveStarted), {}, {}, 0, 0});
+            }
         } catch (...) {
             // posting 재구축 후 저장 전에 콜백이 실패할 수 있다.
             // 저장 실패 시 commitIndexSnapshot과 동일하게 상태를 복구한다.
@@ -78,10 +93,6 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
                 snapshot_ = IndexSnapshot{};
             }
             throw;
-        }
-        const auto root = std::filesystem::absolute(directory).lexically_normal();
-        if (work.changed || root != snapshot_.root) {
-            commitIndexSnapshot(std::move(work.documents), root, snapshot_, snapshotPath_);
         }
         logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         workingJob().set("Ready");
@@ -110,19 +121,29 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
             }
             if (progress) progress(event);
         };
-        notify({IndexStage::MetadataStarted, 0, {}, {}});
+        notify({IndexStage::MetadataStarted, 0, {}, {}, 0, 0});
         const auto metadataStarted = Clock::now();
-        auto work = prepareIndex(directory, std::vector<Document>{});
+        auto work = prepareIndex(directory, std::vector<Document>{},
+                                 [&](std::size_t completed, std::size_t total) {
+                                     notify({IndexStage::MetadataProgress, 0, {}, {}, completed, total});
+                                 });
         const auto metadataUs = elapsedMicroseconds(metadataStarted);
-        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}});
+        notify({IndexStage::MetadataCompleted, metadataUs, work.stats, {}, 0, 0});
 
-        notify({IndexStage::TokenizationStarted, 0, {}, {}});
+        notify({IndexStage::TokenizationStarted, 0, {}, {}, 0, work.toTokenize.size()});
         const auto tokenizeStarted = Clock::now();
-        const auto tokens = applyIndexWork(work, rebuilt.index, tokenizer_);
+        const auto tokens = applyIndexWork(
+            work, rebuilt.index, tokenizer_,
+            [&](std::size_t completed, std::size_t total) {
+                notify({IndexStage::TokenizationProgress, 0, {}, {}, completed, total});
+            });
         const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
-        notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens});
+        notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens, 0, 0});
+        notify({IndexStage::SaveStarted, 0, {}, {}, 0, 0});
+        const auto saveStarted = Clock::now();
         commitIndexSnapshot(std::move(work.documents), std::filesystem::absolute(directory).lexically_normal(),
                             rebuilt, snapshotPath_);
+        notify({IndexStage::SaveCompleted, elapsedMicroseconds(saveStarted), {}, {}, 0, 0});
         logIndexUpdated(metadataUs, tokenizeUs, work.stats);
         snapshot_ = std::move(rebuilt);
         ready_ = true;

@@ -126,6 +126,15 @@ int main(int argc, char** argv) {
         app.index(root / "docs");
         cli::CommandFeedback feedback;
         std::ostringstream stream;
+        {
+            std::string dispatched;
+            const auto action = cli::handleLine(
+                "test", app, "/index docs path", stream, cli::OutputMode::Tui, &feedback,
+                [&](const std::string& directory) { dispatched = directory; });
+            require(action == cli::LineAction::Ran && feedback.indexStarted &&
+                        feedback.display == cli::Display::Unchanged && dispatched == "docs path",
+                    "TUI index dispatch failed");
+        }
         cli::handleLine("test", app, " hit ", stream, cli::OutputMode::Tui, &feedback);
         require(feedback.display == cli::Display::Results && feedback.newSearch && feedback.query == "hit" &&
                 !feedback.elapsed.empty() && feedback.page && feedback.page->files[0].relativePath == " leading.txt",

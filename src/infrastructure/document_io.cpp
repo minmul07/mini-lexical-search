@@ -30,7 +30,8 @@ std::string hashFile(const std::filesystem::path& path) {
 
 }  // namespace
 
-std::vector<Document> collectDocuments(const std::filesystem::path& directory) {
+std::vector<Document> collectDocuments(const std::filesystem::path& directory,
+                                       const DocumentCollectionProgress& progress) {
     if (!std::filesystem::is_directory(directory)) {
         throw std::runtime_error("not a directory: " + directory.string());
     }
@@ -46,6 +47,7 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory) {
         }
     }
     std::sort(paths.begin(), paths.end());
+    if (progress) progress(0, paths.size());
 
     std::vector<Document> documents;
     for (const auto& path : paths) {
@@ -54,6 +56,7 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory) {
         }
         documents.push_back({static_cast<DocumentId>(documents.size()),
                              path.generic_string(), path.filename().string(), 0, hashFile(path)});
+        if (progress) progress(documents.size(), paths.size());
     }
     return documents;
 }

@@ -32,6 +32,7 @@ ctest --test-dir build --output-on-failure
 | 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·AND/OR 검색, 빈 입력·제거된 검색·탐색 명령 거부, 출력 형식·파일 건수·버튼 탐색·공백 경로·경계·읽기 경고·구조화된 피드백 |
 | TUI 결과 모델 | `result_view_test` | 1~3줄 발췌·셀 너비·토큰 강조·한글/이모지/결합 문자, 행 선택·스크롤·리사이즈·홈 초기화 |
 | TUI 입력 | `tui_input_test` | 조합 이모지의 좌우·상하 이동·삭제·마우스 편집, 반복 입력·리사이즈·줄바꿈 커서 보존, 출력 셀·커서·테두리 정렬 |
+| TUI 인덱싱 진행 | `tui_index_test` | 진행률 단계 전환·로그·완료/실패 상태, 검색창 위치 고정, 셀 폭 기준 fill과 텍스트 보존 |
 | CLI 통합 | `cli_test` | 실행 옵션·명령, 실제 저장·재실행, 파일별 전체 출력·시간·로그, 손상 스냅샷·입력 오류 처리 |
 
 ## 수동 확인
@@ -41,7 +42,8 @@ ctest --test-dir build --output-on-failure
 | CLI 대화형 입력 | `./build/mini_lexical_search start --no-tui` | `/index`, 단일·AND·OR 검색어, `/help`, `/exit`의 입력·출력과 종료 |
 | TUI 화면·입력 | `./build/mini_lexical_search start` | 상단 검색창·실행 검색어 고정, 최대 3줄 입력·발췌·강조, ↑↓로 검색창 마지막 줄↔첫 결과 이동·여러 줄 입력 커서 이동, 조합 이모지 반복 입력·좌우 이동·삭제·리사이즈 후 커서와 테두리 정렬, Tab 무동작, Home/End 결과 선택, 버튼 클릭·Space·Enter 실행, 검색창 Space 공백·Enter 검색, 휠·PgUp/PgDn, 고정 페이지 버튼, 리사이즈 직후 스크롤 |
 | TUI 홈·종료 | 격리된 경로에서 검색 후 Esc 및 재검색 | 홈 복귀 시 입력·페이지·펼침 초기화와 인덱스 유지, 홈 Esc 무동작, `/help` 후 탐색, Ctrl+C·`/exit`·`/quit` 종료와 터미널 복구 |
-| TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료, Esc 무동작 |
+| TUI 인덱싱 | 문서가 많은 격리된 경로에서 `/index` 실행 | 검색창이 위로 이동하지 않고 내부 fill이 왼쪽에서 오른쪽으로 차오름, 단계별 로그가 검색창 아래에 고정, 인덱싱 중 Enter 무시와 Ctrl+C 종료 지연, 완료 후 검색 |
+| TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료, Esc 무동작, 재생성 중 fill·실패 시 팝업 재표시 |
 
 TUI 발췌·결과 모델은 CTest로 검증하고, 실제 화면 렌더링·터미널 이벤트는 수동 또는 PTY로 검증한다. 화면 기준은 [TUI 디자인](TUI_DESIGN.md)을 참고한다.
 수동 인덱싱은 현재 작업 디렉터리의 `.data/index.bin`을 갱신하므로 격리된 경로에서 확인한다.
