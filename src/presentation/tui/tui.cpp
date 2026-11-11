@@ -8,7 +8,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <exception>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -20,7 +22,15 @@ namespace mini_lexical_search::tui {
 namespace {
 
 constexpr int kBorderColumns = 2;
+constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
 using Clock = std::chrono::steady_clock;
+
+// 더보기로 추가된 행을 ease-out으로 순차 노출하기 위한 상태다.
+struct MoreReveal {
+    bool active = false;
+    ItemKey firstKey;
+    Clock::time_point started{};
+};
 
 // 전체 화면을 같은 배경색으로 칠한다.
 ftxui::Element blackBackground(ftxui::Element element) {
@@ -73,7 +83,7 @@ void run(const char* program, SearchApplication& application) {
     ftxui::Box outputBox;
     ftxui::Box inputBox;
     ftxui::Box footerBox;
-    struct Hit { ftxui::Box box; int item; };
+    struct Hit { ftxui::Box box; int item = -1; };
     std::vector<Hit> hits;
     HomeGeometry homeLayout;
     auto geometry = [&] {
@@ -102,6 +112,7 @@ void run(const char* program, SearchApplication& application) {
     Clock::time_point fillFadeStarted{};
     Clock::time_point lastFrame = Clock::now();
     constexpr auto kFillFadeDuration = std::chrono::milliseconds(750);
+    MoreReveal moreReveal;
     IndexProgressModel indexModel;
     std::jthread indexWorker;
     bool mouseMode = false;
@@ -125,6 +136,7 @@ void run(const char* program, SearchApplication& application) {
         fill = 0.0F;
         fillOpacity = 1.0F;
         fillFadeStarted = {};
+        moreReveal.active = false;
         view.home();
         sessionQuery.clear();
         sessionElapsed.clear();
@@ -224,6 +236,7 @@ void run(const char* program, SearchApplication& application) {
     });
     auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text,
                              int scrollOffset = 0) {
+        moreReveal.active = false;
         if (!indexRunning) indexModel.clear();
         if (feedback.newSearch) {
             sessionQuery = feedback.query;
@@ -268,8 +281,14 @@ void run(const char* program, SearchApplication& application) {
             applyFeedback(feedback, output.str());
         }
         setFocus(view.mode == ViewMode::Results);
-        if (firstNew) view.select(*firstNew, false);
-        else if (view.mode == ViewMode::Results) view.select(0, key.kind != ItemKind::More);
+        if (firstNew) {
+            view.select(*firstNew, false);
+            moreReveal.active = true;
+            moreReveal.firstKey = *firstNew;
+            moreReveal.started = Clock::now();
+        } else if (view.mode == ViewMode::Results) {
+            view.select(0, key.kind != ItemKind::More);
+        }
     };
     auto component = ftxui::Renderer(focusGroup, [&] {
         if (showPrompt) return blackBackground(ftxui::filler());
@@ -278,6 +297,54 @@ void run(const char* program, SearchApplication& application) {
         const auto delta = std::clamp(std::chrono::duration<float>(now - lastFrame).count(),
                                       0.0F, 0.1F);
         lastFrame = now;
+        int revealFrom = 0;
+        int revealTo = 0;
+        if (moreReveal.active) {
+            const auto& items = view.items();
+            int first = -1;
+            for (std::size_t i = 0; i < items.size(); ++i) {
+                if (items[i].key == moreReveal.firstKey) {
+                    first = static_cast<int>(i);
+                    break;
+                }
+            }
+            int totalItems = 0;
+            if (first >= 0) {
+                for (std::size_t i = static_cast<std::size_t>(first); i < items.size(); ++i) {
+                    const auto& item = items[i];
+                    if (item.key.path != moreReveal.firstKey.path) break;
+                    if (item.key.kind != ItemKind::Line && item.key.kind != ItemKind::More) break;
+                    ++totalItems;
+                }
+            }
+            if (totalItems == 0) {
+                moreReveal.active = false;
+            } else {
+                const float elapsed =
+                    std::chrono::duration<float>(now - moreReveal.started).count();
+                const float duration = std::chrono::duration<float>(kMoreRevealDuration).count();
+                const float progress = std::clamp(elapsed / duration, 0.0F, 1.0F);
+                const int startRow = items[static_cast<std::size_t>(first)].firstRow;
+                const auto& last = items[static_cast<std::size_t>(first + totalItems - 1)];
+                const int endRow = last.firstRow + last.rowCount;
+                const int totalRows = endRow - startRow;
+                int shownRows = totalRows;
+                if (progress < 1.0F) {
+                    // Blend the decelerating curve with linear motion so the last
+                    // row still appears near the end of the 200ms window.
+                    const auto eased =
+                        0.5F * ftxui::animation::easing::QuadraticOut(progress) + 0.5F * progress;
+                    shownRows = std::clamp(
+                        static_cast<int>(std::lround(static_cast<float>(totalRows) * eased)), 1,
+                        totalRows);
+                    ftxui::animation::RequestAnimationFrame();
+                } else {
+                    moreReveal.active = false;
+                }
+                revealFrom = startRow + shownRows;
+                revealTo = endRow;
+            }
+        }
         const auto indexDisplay = indexModel.display();
         if (indexRunning) {
             if (fill < indexDisplay.target) {
@@ -358,12 +425,15 @@ void run(const char* program, SearchApplication& application) {
                                     (view.elapsed.empty() ? "" : "  (" + view.elapsed + " ms)"), areaWidth)));
         }
         const auto& rows = view.rows();
-        const int end = std::min(static_cast<int>(rows.size()), view.offset() + view.height());
-        const int visibleCount = end - view.offset();
         const int controls = view.mode == ViewMode::Results ? view.page.hasPrevious + view.page.hasNext : 0;
-        hits.resize(static_cast<std::size_t>(visibleCount + controls));
+        hits.assign(static_cast<std::size_t>(view.height() + controls), Hit{});
+        int hitCount = 0;
         ftxui::Elements visible;
-        for (int i = view.offset(); i < end; ++i) {
+        // Hidden expansion rows do not consume viewport slots, so following
+        // items slide down as the new rows take their space.
+        for (int i = view.offset();
+             i < static_cast<int>(rows.size()) && hitCount < view.height(); ++i) {
+            if (i >= revealFrom && i < revealTo) continue;
             const auto& row = rows[i];
             ftxui::Element element;
             if (row.separator) element = ftxui::separator();
@@ -385,7 +455,7 @@ void run(const char* program, SearchApplication& application) {
                 element = ftxui::hbox(std::move(fragments));
                 if (row.title) element |= ftxui::bold;
             }
-            auto& hit = hits[static_cast<std::size_t>(i - view.offset())];
+            auto& hit = hits[static_cast<std::size_t>(hitCount++)];
             hit.item = row.item;
             visible.push_back(element | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, areaWidth) |
                               ftxui::reflect(hit.box));
@@ -394,7 +464,7 @@ void run(const char* program, SearchApplication& application) {
                          ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, view.height()) |
                          ftxui::size(ftxui::WIDTH, ftxui::EQUAL, areaWidth) | ftxui::reflect(outputBox));
         if (view.mode == ViewMode::Results) {
-            int hitIndex = visibleCount;
+            int hitIndex = hitCount;
             auto control = [&](ItemKind kind, const std::string& label, bool enabled) {
                 auto element = ftxui::text(label);
                 if (!enabled) return element | ftxui::dim;
@@ -449,6 +519,15 @@ void run(const char* program, SearchApplication& application) {
             }
             return true;
         }
+        // Mouse release/move must not cut the animation that a click just started.
+        bool interruptsReveal = true;
+        if (event.is_mouse()) {
+            const auto& mouse = event.mouse();
+            interruptsReveal =
+                (mouse.button == ftxui::Mouse::Left && mouse.motion == ftxui::Mouse::Pressed) ||
+                mouse.button == ftxui::Mouse::WheelUp || mouse.button == ftxui::Mouse::WheelDown;
+        }
+        if (moreReveal.active && interruptsReveal) moreReveal.active = false;
         if (event == ftxui::Event::CtrlC) {
             if (indexRunning) {
                 exitWhenIndexed = true;
@@ -461,6 +540,7 @@ void run(const char* program, SearchApplication& application) {
         if (event == ftxui::Event::Escape) {
             if (view.mode != ViewMode::Home) {
                 application.clearSearch();
+                moreReveal.active = false;
                 view.home();
                 indexModel.clear();
                 fill = 0.0F;

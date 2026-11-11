@@ -40,7 +40,7 @@ ctest --test-dir build --output-on-failure
 | 분야 | 실행 방법 | 핵심 확인 항목 |
 | --- | --- | --- |
 | CLI 대화형 입력 | `./build/mini_lexical_search start --no-tui` | `/index`, 단일·AND·OR 검색어, `/help`, `/exit`의 입력·출력과 종료 |
-| TUI 화면·입력 | `./build/mini_lexical_search start` | 전체 배경 검정, 상단 검색창·실행 검색어 고정, 최대 3줄 입력·발췌·강조, ↑↓로 검색창 마지막 줄↔첫 결과 이동·여러 줄 입력 커서 이동, 조합 이모지 반복 입력·좌우 이동·삭제·리사이즈 후 커서와 테두리 정렬, Tab 무동작, Home/End 결과 선택, 버튼 클릭·Space·Enter 실행, 더보기 후 위쪽 행 위치 유지, 검색창 Space 공백·Enter 검색, 휠·PgUp/PgDn, 고정 페이지 버튼, 리사이즈 직후 스크롤 |
+| TUI 화면·입력 | `./build/mini_lexical_search start` | 전체 배경 검정, 상단 검색창·실행 검색어 고정, 최대 3줄 입력·발췌·강조, ↑↓로 검색창 마지막 줄↔첫 결과 이동·여러 줄 입력 커서 이동, 조합 이모지 반복 입력·좌우 이동·삭제·리사이즈 후 커서와 테두리 정렬, Tab 무동작, Home/End 결과 선택, 버튼 클릭·Space·Enter 실행, 더보기 후 위쪽 행 위치 유지·200ms ease-out 순차 확장·아래 항목이 함께 밀려 내려가며 공간 확보·애니메이션 중 입력 시 즉시 완료, 검색창 Space 공백·Enter 검색, 휠·PgUp/PgDn, 고정 페이지 버튼, 리사이즈 직후 스크롤 |
 | TUI 홈·종료 | 격리된 경로에서 검색 후 Esc 및 재검색 | 홈 복귀 시 입력·페이지·펼침 초기화와 인덱스 유지, 홈 Esc 무동작, `/help` 후 탐색, Ctrl+C·`/exit`·`/quit` 종료와 터미널 복구 |
 | TUI 인덱싱 | 문서가 많은 격리된 경로에서 `/index` 실행 | 검색창이 위로 이동하지 않고 내부 fill이 왼쪽에서 오른쪽으로 차오름, 단계별 로그가 검색창 아래에 고정, 인덱싱 중 Enter 무시와 Ctrl+C 종료 지연, 완료 후 검색 |
 | TUI 손상 복구 | 손상 스냅샷이 있는 작업 디렉터리에서 TUI 실행 | `reset index`·`quit` 팝업의 키보드·마우스 선택과 복구·종료, Esc 무동작, 재생성 중 fill·실패 시 팝업 재표시 |
