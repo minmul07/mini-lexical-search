@@ -1,5 +1,4 @@
 #include "mini_lexical_search/application/search_application.hpp"
-#include "mini_lexical_search/application/working_job.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -91,14 +90,12 @@ void testSession(const fs::path& root) {
     write(documents / "b.txt", "beta\nalpha\n자료구조\n");
     SearchApplication app(snapshot);
     require(app.ready() && app.loadError().empty(), "missing snapshot must start ready");
-    require(workingJob().label() == "Ready", "missing snapshot must be ready");
     require(app.snapshotPath() == snapshot && search(app, "alpha").empty(), "empty session failed");
 
     std::vector<IndexProgress> events;
     auto collect = [&](const IndexProgress& event) { events.push_back(event); };
     const auto update = app.index(documents, collect);
     requireStages(events);
-    require(workingJob().label() == "Ready", "successful indexing must be ready");
     require(update.metadata.added == 2 && update.tokens.documents == 2 && update.tokens.tokens == 9,
             "wrong indexing counters");
     const auto* metadataCompleted = findStage(events, IndexStage::MetadataCompleted);
@@ -233,7 +230,6 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     write(corrupt, "not a binary index");
     SearchApplication broken(corrupt);
     require(!broken.ready() && !broken.loadError().empty(), "corrupt snapshot accepted");
-    require(workingJob().label() == "Failed to load index", "corrupt snapshot must fail the job");
     requireFailure([&] { search(broken, "alpha"); }, "search on corrupt session accepted");
     std::vector<IndexProgress> events;
     requireFailure([&] { broken.index(root, [&](const IndexProgress& e) { events.push_back(e); }); },
@@ -246,12 +242,11 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     write(documents / "a.txt", "alpha\n");
     fs::create_directory(corrupt.string() + ".tmp");
     requireFailure([&] { broken.rebuildIndex(documents); }, "blocked rebuild accepted");
-    require(!broken.ready() && workingJob().label() == "Failed to load index",
-            "failed rebuild became ready");
+    require(!broken.ready(), "failed rebuild became ready");
     require(read(corrupt) == "not a binary index", "failed rebuild overwrote the snapshot");
     fs::remove(corrupt.string() + ".tmp");
     const auto rebuilt = broken.rebuildIndex(documents);
-    require(broken.ready() && workingJob().label() == "Ready" && rebuilt.metadata.added == 1 &&
+    require(broken.ready() && rebuilt.metadata.added == 1 &&
                 search(broken, "alpha").size() == 1,
             "rebuild did not replace the damaged snapshot");
     require(read(corrupt) != "not a binary index", "rebuild kept the damaged text");

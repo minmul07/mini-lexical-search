@@ -10,7 +10,6 @@
 
 #include "mini_lexical_search/domain/query_processor.hpp"
 #include "mini_lexical_search/application/log.hpp"
-#include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
 #include "mini_lexical_search/infrastructure/document_io.hpp"
 #include "mini_lexical_search/infrastructure/matching_lines.hpp"
@@ -95,18 +94,15 @@ struct SearchApplication::Session {
 
 SearchApplication::SearchApplication(std::filesystem::path snapshotPath)
     : snapshotPath_(std::move(snapshotPath)) {
-    workingJob().set("Loading index");
     const auto started = std::chrono::steady_clock::now();
     try {
         snapshot_ = loadIndexSnapshot(snapshotPath_);
         const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - started).count();
-        workingJob().set("Ready");
         appendLog("index load succeeded (" + formatElapsedMilliseconds(elapsed) + " ms)");
     } catch (const std::exception& error) {
         ready_ = false;
         loadError_ = error.what();
-        workingJob().set("Failed to load index");
         appendLog("index load failed: " + loadError_);
     }
 }

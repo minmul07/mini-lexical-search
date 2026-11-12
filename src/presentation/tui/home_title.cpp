@@ -23,7 +23,7 @@ constexpr std::array<std::string_view, kArtHeight> kTitleArt{
 }  // namespace
 
 HomeTitle homeTitle(int terminalWidth, int boxTop) {
-    // 제목이 첫 줄에 닿으면 우측 상단 상태 라벨과 겹칠 수 있다.
+    // 제목이 화면 첫 줄에 닿지 않도록 위쪽 여백을 둔다.
     if (terminalWidth >= kArtWidth + kArtMargin && boxTop >= kArtHeight + 3) {
         HomeTitle title;
         title.top = boxTop - kArtHeight - 2;

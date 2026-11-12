@@ -41,8 +41,7 @@ add_library(mini_lexical_search_application
     src/application/indexer.cpp
     src/application/log.cpp
     src/application/search_application.cpp
-    src/application/search_session.cpp
-    src/application/working_job.cpp)
+    src/application/search_session.cpp)
 target_link_libraries(mini_lexical_search_application
     PUBLIC mini_lexical_search_domain
     PRIVATE mini_lexical_search_infrastructure)

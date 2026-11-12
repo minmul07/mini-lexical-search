@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "mini_lexical_search/application/log.hpp"
-#include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
 
 namespace mini_lexical_search {
@@ -50,11 +49,6 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
     requireReady();
     try {
         const auto notify = [&](const IndexProgress& event) {
-            if (event.stage == IndexStage::MetadataStarted) {
-                workingJob().set("updating index...");
-            } else if (event.stage == IndexStage::TokenizationStarted) {
-                workingJob().set("Tokenizing..");
-            }
             if (progress) progress(event);
         };
         notify({IndexStage::MetadataStarted, 0, {}, {}, 0, 0});
@@ -95,14 +89,11 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
             throw;
         }
         logIndexUpdated(metadataUs, tokenizeUs, work.stats);
-        workingJob().set("Ready");
         return {work.stats, tokens};
     } catch (const std::exception& error) {
-        workingJob().set("Failed to update index");
         logIndexFailed(error);
         throw;
     } catch (...) {
-        workingJob().set("Failed to update index");
         appendLog("index failed");
         throw;
     }
@@ -114,11 +105,6 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
     IndexSnapshot rebuilt;
     try {
         const auto notify = [&](const IndexProgress& event) {
-            if (event.stage == IndexStage::MetadataStarted) {
-                workingJob().set("updating index...");
-            } else if (event.stage == IndexStage::TokenizationStarted) {
-                workingJob().set("Tokenizing..");
-            }
             if (progress) progress(event);
         };
         notify({IndexStage::MetadataStarted, 0, {}, {}, 0, 0});
@@ -148,14 +134,11 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
         snapshot_ = std::move(rebuilt);
         ready_ = true;
         loadError_.clear();
-        workingJob().set("Ready");
         return {work.stats, tokens};
     } catch (const std::exception& error) {
-        workingJob().set("Failed to load index");
         logIndexFailed(error);
         throw;
     } catch (...) {
-        workingJob().set("Failed to load index");
         appendLog("index failed");
         throw;
     }

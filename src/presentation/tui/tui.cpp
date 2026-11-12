@@ -1,7 +1,6 @@
 #include "mini_lexical_search/presentation/tui/tui.hpp"
 
 #include "mini_lexical_search/presentation/cli/cli.hpp"
-#include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/presentation/tui/clipboard.hpp"
 #include "mini_lexical_search/presentation/tui/home_title.hpp"
 #include "mini_lexical_search/presentation/tui/index_progress.hpp"
@@ -561,10 +560,6 @@ void run(const char* program, SearchApplication& application) {
                     ftxui::filler(),
                 }));
             }
-            layers.push_back(ftxui::vbox(
-                {ftxui::text(clipped(workingJob().label(), terminalSize.dimx)) |
-                     ftxui::align_right,
-                 ftxui::filler()}));
             return blackBackground(ftxui::dbox(std::move(layers)));
         }
         ftxui::Elements column{std::move(field)};
@@ -635,7 +630,7 @@ void run(const char* program, SearchApplication& application) {
             column.push_back(footer | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, areaWidth) |
                              ftxui::reflect(footerBox));
         }
-        column.push_back(ftxui::text(clipped("↑↓: 검색창/결과  Space/Enter: 실행  Esc: 홈  | " + workingJob().label(), areaWidth)) |
+        column.push_back(ftxui::text(clipped("↑↓: 검색창/결과  Space/Enter: 실행  Esc: 홈", areaWidth)) |
                          ftxui::dim);
         return blackBackground(
             ftxui::hbox({ftxui::text("  "), ftxui::vbox(std::move(column)), ftxui::filler()}));

@@ -93,7 +93,7 @@ Application은 UI 타입·콘솔 출력에 의존하지 않고, FTXUI는 TUI 타
 문서 ID만 먼저 계산·정렬하고, 방문한 파일의 Posting 행을 커서로 병합한다. 전체 후보의 매칭 행 벡터를 복사하지 않는다.
 파일별 전체 행 수를 계산한 뒤 표시할 원문만 읽고, 펼치기는 직전 바이트 위치에서 이어 읽는다. 방문한 페이지의 원문과 펼친 상태는 세션 동안 캐시한다.
 기존 `QueryProcessor::process`와 Top-K는 독립 알고리즘·테스트용으로 유지하며 실제 UI 검색 경로는 `matchingDocuments`를 사용한다.
-`SearchApplication`은 단일 스레드 계약을 유지한다. TUI는 인덱싱을 worker 스레드에서 실행하는 동안 검색·탐색 명령을 실행하지 않는다. 진행 콜백은 worker 스레드에서 호출되므로 UI를 직접 수정하지 않고, 동기화된 `IndexProgressModel`을 통해 화면에 전달한다. `WorkingJob` 라벨은 mutex로 보호한다.
+`SearchApplication`은 단일 스레드 계약을 유지한다. TUI는 인덱싱을 worker 스레드에서 실행하는 동안 검색·탐색 명령을 실행하지 않는다. 진행 콜백은 worker 스레드에서 호출되므로 UI를 직접 수정하지 않고, 동기화된 `IndexProgressModel`을 통해 화면에 전달한다.
 
 ## 핵심 동작과 주의 사항
 
