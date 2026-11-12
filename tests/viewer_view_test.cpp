@@ -17,10 +17,9 @@ std::string joined(const PreviewRow& row, bool hits = false) {
     for (const auto& part : row) if (!hits || part.highlighted) text += part.text;
     return text;
 }
-ftxui::Event wheel(ftxui::Mouse::Button button, bool shift = false, bool control = false) {
+ftxui::Event wheel(ftxui::Mouse::Button button, bool control = false) {
     ftxui::Mouse mouse;
     mouse.button = button;
-    mouse.shift = shift;
     mouse.control = control;
     return ftxui::Event::Mouse("", mouse);
 }
@@ -106,15 +105,8 @@ void wrapping() {
     view.handleEvent(ftxui::Event::ArrowRight);
     require(view.horizontalOffset() == 1, "right must scroll one cell");
     view.handleEvent(wheel(ftxui::Mouse::WheelDown, true));
-    require(view.horizontalOffset() == 4 && view.offset() == 0,
-            "Shift+wheel must only scroll horizontally");
+    require(view.horizontalOffset() == 4 && view.offset() == 0, "Ctrl+wheel must only scroll horizontally");
     view.handleEvent(wheel(ftxui::Mouse::WheelUp, true));
-    view.layout(22, 2);
-    view.handleEvent(wheel(ftxui::Mouse::WheelDown, false, true));
-    require(view.horizontalOffset() == 1 && view.offset() == 1,
-            "Ctrl+wheel must scroll vertically");
-    view.handleEvent(wheel(ftxui::Mouse::WheelUp, false, true));
-    view.layout(22, 30);
     view.handleEvent(ftxui::Event::ArrowLeft);
     require(view.horizontalOffset() == 0, "horizontal reverse movement incorrect");
     view.scrollHorizontal(10000);
@@ -123,7 +115,7 @@ void wrapping() {
     view.handleEvent(ftxui::Event::Character('w'));
     require(view.wrap() && view.horizontalOffset() == 0, "enabling wrap must reset horizontal offset");
     view.handleEvent(wheel(ftxui::Mouse::WheelDown, true));
-    require(view.horizontalOffset() == 0, "wrapped mode must ignore shift+wheel");
+    require(view.horizontalOffset() == 0, "wrapped mode must ignore horizontal wheel");
     view.open("reopened", {"alpha"}, 1, "alpha");
     view.layout(20, 3);
     require(view.numbers() && view.wrap(), "reopening must reset preferences");

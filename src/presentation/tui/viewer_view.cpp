@@ -145,7 +145,7 @@ void ViewerView::handleEvent(ftxui::Event event) {
         const auto& mouse = event.mouse();
         if (mouse.button == ftxui::Mouse::WheelUp || mouse.button == ftxui::Mouse::WheelDown) {
             const int delta = mouse.button == ftxui::Mouse::WheelUp ? -3 : 3;
-            if (mouse.shift) scrollHorizontal(delta);
+            if (mouse.control) scrollHorizontal(delta);
             else scroll(delta);
         } else if (mouse.button == ftxui::Mouse::WheelLeft || mouse.button == ftxui::Mouse::WheelRight) {
             scrollHorizontal(mouse.button == ftxui::Mouse::WheelLeft ? -3 : 3);
@@ -267,8 +267,8 @@ std::string ViewerView::footer() const {
                        " W:" + (wrap_ ? "on" : "off");
     if (width_ < 65) return "Esc:뒤로 ↑↓ PgUp/Dn n:번호 w:wrap " + state;
     if (width_ < 125) return
-        "Esc:뒤로 ↑↓/휠 PgUp/Dn Home/End ←→/⇧휠 드래그:선택 우클릭:복사 n:번호 w:wrap " + state;
-    return "Esc:뒤로 ↑↓/휠:스크롤 PgUp/Dn Home/End ←→/Shift+휠:가로 "
+        "Esc:뒤로 ↑↓/휠 PgUp/Dn Home/End ←→/^휠 드래그:선택 우클릭:복사 n:번호 w:wrap " + state;
+    return "Esc:뒤로 ↑↓/휠:스크롤 PgUp/Dn Home/End ←→/Ctrl+휠:가로 "
            "드래그:선택 우클릭:복사 n:번호 w:wrap " + state + " | " +
            std::to_string(line) + "/" + std::to_string(lines_.size());
 }
