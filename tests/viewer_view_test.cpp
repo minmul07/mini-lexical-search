@@ -121,6 +121,29 @@ void wrapping() {
     require(view.numbers() && view.wrap(), "reopening must reset preferences");
 }
 
+void koreanShortcuts() {
+    ViewerView view;
+    view.open("korean", {"alpha"}, 1, "alpha");
+    view.layout(20, 3);
+    require(view.numbers() && view.wrap(), "opening defaults incorrect");
+    view.handleEvent(ftxui::Event::Character("ㅜ"));
+    require(!view.numbers() && view.wrap(), "Hangul n key must toggle numbers");
+    view.handleEvent(ftxui::Event::Character("ㅜ"));
+    require(view.numbers(), "Hangul n key must toggle numbers back");
+    view.handleEvent(ftxui::Event::Character("ᅮ"));
+    require(!view.numbers(), "conjoining Hangul n key must toggle numbers");
+    view.handleEvent(ftxui::Event::Character("ㅈ"));
+    require(!view.numbers() && !view.wrap(), "Hangul w key must toggle wrap");
+    view.handleEvent(ftxui::Event::Character("ㅈ"));
+    require(view.wrap(), "Hangul w key must toggle wrap back");
+    view.handleEvent(ftxui::Event::Character("ᄌ"));
+    require(!view.wrap(), "conjoining Hangul w key must toggle wrap");
+    view.handleEvent(ftxui::Event::Character('n'));
+    require(view.numbers(), "ASCII n key must still toggle numbers");
+    view.handleEvent(ftxui::Event::Character('w'));
+    require(view.wrap(), "ASCII w key must still toggle wrap");
+}
+
 void resizeAndUnicode() {
     ViewerView view;
     const std::string source = std::string(200, 'x') + " 자료구조 👨‍👩‍👧 👍🏽 🇰🇷 e\xCC\x81 끝";
@@ -214,6 +237,7 @@ int main() {
     try {
         navigation();
         wrapping();
+        koreanShortcuts();
         resizeAndUnicode();
         selection();
     } catch (const std::exception& error) {

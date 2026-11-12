@@ -39,6 +39,15 @@ PreviewRow slice(const PreviewRow& source, int left, int width, int selectedLeft
     }
     return result;
 }
+
+// 두벌식 한글 입력 상태에서는 단축키가 같은 키의 자모로 전달된다.
+char shortcutKey(const ftxui::Event& event) {
+    if (!event.is_character()) return '\0';
+    const auto& key = event.input();
+    if (key == "n" || key == "ㅜ" || key == "ᅮ") return 'n';
+    if (key == "w" || key == "ㅈ" || key == "ᄌ") return 'w';
+    return '\0';
+}
 } // namespace
 
 void ViewerView::open(std::string path, std::vector<std::string> lines, std::uint32_t target,
@@ -131,8 +140,9 @@ void ViewerView::toggleWrap() { wrap_ = !wrap_; rebuild(); }
 
 void ViewerView::handleEvent(ftxui::Event event) {
     clearSelection();
-    if (event == ftxui::Event::Character('n')) toggleNumbers();
-    else if (event == ftxui::Event::Character('w')) toggleWrap();
+    const char key = shortcutKey(event);
+    if (key == 'n') toggleNumbers();
+    else if (key == 'w') toggleWrap();
     else if (event == ftxui::Event::ArrowUp) scroll(-1);
     else if (event == ftxui::Event::ArrowDown) scroll(1);
     else if (event == ftxui::Event::PageUp) scroll(-height_);
