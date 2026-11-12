@@ -25,7 +25,7 @@ namespace {
 
 constexpr int kBorderColumns = 2;
 constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
-constexpr auto kDoubleClickInterval = std::chrono::milliseconds(400);
+constexpr auto kDoubleClickInterval = std::chrono::milliseconds(700);
 constexpr auto kCopyNoticeSlideDuration = std::chrono::milliseconds(300);
 constexpr auto kCopyNoticeHoldDuration = std::chrono::seconds(3);
 using Clock = std::chrono::steady_clock;
