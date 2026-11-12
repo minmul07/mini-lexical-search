@@ -24,6 +24,7 @@ namespace {
 
 constexpr int kBorderColumns = 2;
 constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
+constexpr auto kDoubleClickInterval = std::chrono::milliseconds(400);
 using Clock = std::chrono::steady_clock;
 
 // 더보기로 추가된 행을 ease-out으로 순차 노출하기 위한 상태다.
@@ -123,6 +124,8 @@ void run(const char* program, SearchApplication& application) {
     std::jthread indexWorker;
     bool mouseMode = false;
     int mouseIndex = -1;
+    std::optional<ItemKey> lastClickKey;
+    Clock::time_point lastClickAt{};
     ftxui::Box resetBox;
     ftxui::Box quitBox;
 
@@ -243,6 +246,7 @@ void run(const char* program, SearchApplication& application) {
     auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text,
                              int scrollOffset = 0) {
         moreReveal.active = false;
+        lastClickKey.reset();
         if (!indexRunning) indexModel.clear();
         if (feedback.newSearch) {
             sessionQuery = feedback.query;
@@ -256,6 +260,7 @@ void run(const char* program, SearchApplication& application) {
         geometry();
     };
     auto activate = [&] {
+        lastClickKey.reset();
         if (!view.selection()) return;
         const auto key = view.selection()->key;
         if (key.kind == ItemKind::Line) {
@@ -589,6 +594,7 @@ void run(const char* program, SearchApplication& application) {
             if (view.mode != ViewMode::Home) {
                 application.clearSearch();
                 moreReveal.active = false;
+                lastClickKey.reset();
                 view.home();
                 indexModel.clear();
                 fill = 0.0F;
@@ -617,13 +623,29 @@ void run(const char* program, SearchApplication& application) {
                     return true;
                 }
                 if (mouse.button == ftxui::Mouse::Left && mouse.motion == ftxui::Mouse::Pressed) {
+                    bool hitFound = false;
                     for (const auto& hit : hits) if (hit.item >= 0 && hit.box.Contain(mouse.x, mouse.y)) {
                         const int item = hit.item;
                         setFocus(true);
                         view.select(item);
-                        activate();
+                        hitFound = true;
+                        if (!view.selection()) break;
+                        const auto key = view.selection()->key;
+                        const auto now = Clock::now();
+                        const bool doubleClick = lastClickKey && *lastClickKey == key &&
+                                                 now - lastClickAt <= kDoubleClickInterval;
+                        lastClickKey = key;
+                        lastClickAt = now;
+                        if (key.kind == ItemKind::Line) {
+                            // 결과 행은 한 번의 클릭으로 선택만 하고, 더블클릭해야 뷰어로 들어간다.
+                            if (doubleClick) activate();
+                        } else {
+                            // 더보기·페이지 버튼은 기존처럼 한 번의 클릭으로 실행한다.
+                            activate();
+                        }
                         break;
                     }
+                    if (!hitFound) lastClickKey.reset();
                     return true;
                 }
             }
