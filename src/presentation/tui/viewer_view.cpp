@@ -9,13 +9,16 @@
 
 namespace mini_lexical_search::tui {
 namespace {
-void append(PreviewRow& row, const std::string& text, bool highlighted = false) {
-    if (!row.empty() && row.back().highlighted == highlighted) row.back().text += text;
-    else row.push_back({text, highlighted});
+void append(PreviewRow& row, const std::string& text, bool highlighted = false,
+            bool selected = false) {
+    if (!row.empty() && row.back().highlighted == highlighted &&
+        row.back().selected == selected) row.back().text += text;
+    else row.push_back({text, highlighted, selected});
 }
 
 // 셀 경계에서 잘리는 전각 문자는 공백으로 바꿔 뒤쪽 셀 위치를 유지한다.
-PreviewRow slice(const PreviewRow& source, int left, int width) {
+PreviewRow slice(const PreviewRow& source, int left, int width, int selectedLeft = 0,
+                 int selectedRight = -1) {
     PreviewRow result;
     int column = 0;
     for (const auto& part : source) {
@@ -23,9 +26,13 @@ PreviewRow slice(const PreviewRow& source, int left, int width) {
             const int cells = std::max(1, ftxui::string_width(glyph));
             const int begin = std::max(left, column);
             const int end = std::min(left + width, column + cells);
-            if (begin < end) append(result,
-                begin == column && end == column + cells ? glyph : std::string(end - begin, ' '),
-                part.highlighted);
+            if (begin < end) {
+                const bool selected = selectedRight >= selectedLeft &&
+                    column + cells - 1 >= selectedLeft && column <= selectedRight;
+                append(result,
+                    begin == column && end == column + cells ? glyph : std::string(end - begin, ' '),
+                    part.highlighted, selected);
+            }
             column += cells;
             if (column >= left + width) return result;
         }
@@ -72,6 +79,7 @@ void ViewerView::layout(int width, int height) {
 }
 
 void ViewerView::rebuild() {
+    clearSelection();
     std::size_t anchorLine = 0, anchorGlyph = 0;
     if (!rows_.empty()) {
         anchorLine = rows_[offset_].line;
@@ -111,15 +119,18 @@ void ViewerView::rebuild() {
 }
 
 void ViewerView::scroll(int rows) {
+    clearSelection();
     offset_ = std::clamp(offset_ + rows, 0, maxOffset_);
 }
 void ViewerView::scrollHorizontal(int cells) {
+    clearSelection();
     horizontal_ = wrap_ ? 0 : std::clamp(horizontal_ + cells, 0, std::max(0, maxLineWidth_ - bodyWidth()));
 }
 void ViewerView::toggleNumbers() { numbers_ = !numbers_; rebuild(); }
 void ViewerView::toggleWrap() { wrap_ = !wrap_; rebuild(); }
 
 void ViewerView::handleEvent(ftxui::Event event) {
+    clearSelection();
     if (event == ftxui::Event::Character('n')) toggleNumbers();
     else if (event == ftxui::Event::Character('w')) toggleWrap();
     else if (event == ftxui::Event::ArrowUp) scroll(-1);
@@ -142,8 +153,89 @@ void ViewerView::handleEvent(ftxui::Event event) {
     }
 }
 
+ViewerView::SelectionPoint ViewerView::pointAt(int column, int row) const {
+    if (rows_.empty()) return {};
+    const int first = std::max(0, offset_);
+    const int last = std::min(offset_ + std::max(0, height_ - 1),
+                              static_cast<int>(rows_.size()) - 1);
+    const int displayRow = std::clamp(offset_ + row, first, last);
+    const int bodyColumn = std::clamp(column - gutter(), 0, std::max(0, bodyWidth() - 1));
+    return {displayRow, horizontal_ + bodyColumn};
+}
+
+std::pair<ViewerView::SelectionPoint, ViewerView::SelectionPoint>
+ViewerView::selectionRange() const {
+    const auto& anchor = selectionAnchor_;
+    const auto& focus = selectionFocus_;
+    if (anchor.row < focus.row || (anchor.row == focus.row && anchor.cell <= focus.cell))
+        return {anchor, focus};
+    return {focus, anchor};
+}
+
+void ViewerView::beginSelection(int column, int row) {
+    selecting_ = false;
+    hasSelection_ = false;
+    if (rows_.empty()) return;
+    selectionAnchor_ = pointAt(column, row);
+    selectionFocus_ = selectionAnchor_;
+    selecting_ = true;
+}
+
+void ViewerView::extendSelection(int column, int row) {
+    if (!selecting_ || rows_.empty()) return;
+    selectionFocus_ = pointAt(column, row);
+    hasSelection_ = selectionFocus_ != selectionAnchor_;
+}
+
+void ViewerView::endSelection(int column, int row) {
+    if (!selecting_) return;
+    selectionFocus_ = pointAt(column, row);
+    selecting_ = false;
+    hasSelection_ = selectionFocus_ != selectionAnchor_;
+}
+
+void ViewerView::clearSelection() {
+    selecting_ = false;
+    hasSelection_ = false;
+    selectionAnchor_ = {};
+    selectionFocus_ = {};
+}
+
+std::string ViewerView::selectedText() const {
+    if (!hasSelection_ || rows_.empty()) return {};
+    const auto [start, end] = selectionRange();
+    const int first = std::max(0, start.row);
+    const int last = std::min(end.row, static_cast<int>(rows_.size()) - 1);
+    std::string result;
+    bool firstRow = true;
+    for (int index = first; index <= last; ++index) {
+        if (!firstRow) result += '\n';
+        firstRow = false;
+        const auto& row = rows_[static_cast<std::size_t>(index)];
+        const int left = index == start.row ? start.cell : 0;
+        const int right = index == end.row ? end.cell : std::numeric_limits<int>::max();
+        int column = 0;
+        for (const auto& part : row.fragments) {
+            for (const auto& glyph : displayGlyphs(part.text)) {
+                const int cells = std::max(1, ftxui::string_width(glyph));
+                if (column + cells - 1 >= left && column <= right) result += glyph;
+                column += cells;
+            }
+        }
+    }
+    return result;
+}
+
 std::vector<PreviewRow> ViewerView::visibleRows() const {
     std::vector<PreviewRow> result;
+    SelectionPoint start;
+    SelectionPoint end;
+    const bool selecting = hasSelection_;
+    if (selecting) {
+        const auto range = selectionRange();
+        start = range.first;
+        end = range.second;
+    }
     for (int i = offset_; i < static_cast<int>(rows_.size()) && i < offset_ + height_; ++i) {
         const auto& row = rows_[i];
         std::string prefix;
@@ -155,8 +247,15 @@ std::vector<PreviewRow> ViewerView::visibleRows() const {
         }
         prefix.resize(static_cast<std::size_t>(gutter()));
         PreviewRow content{{std::move(prefix), false}};
-        for (const auto& part : slice(row.fragments, horizontal_, bodyWidth()))
-            append(content, part.text, part.highlighted);
+        int selectedLeft = 0;
+        int selectedRight = -1;
+        if (selecting && i >= start.row && i <= end.row) {
+            selectedLeft = i == start.row ? start.cell : 0;
+            selectedRight = i == end.row ? end.cell : std::numeric_limits<int>::max();
+        }
+        for (const auto& part : slice(row.fragments, horizontal_, bodyWidth(), selectedLeft,
+                                      selectedRight))
+            append(content, part.text, part.highlighted, part.selected);
         result.push_back(std::move(content));
     }
     return result;
@@ -167,9 +266,11 @@ std::string ViewerView::footer() const {
     const auto state = "N:" + std::string(numbers_ ? "on" : "off") +
                        " W:" + (wrap_ ? "on" : "off");
     if (width_ < 65) return "Esc:뒤로 ↑↓ PgUp/Dn n:번호 w:wrap " + state;
-    if (width_ < 125) return "Esc:뒤로 ↑↓/휠 PgUp/Dn Home/End ←→/^휠 n:번호 w:wrap " + state;
-    return "Esc:뒤로 ↑↓/휠:스크롤 PgUp/Dn Home/End ←→/Ctrl+휠:가로 n:번호 w:wrap " +
-           state + " | " + std::to_string(line) + "/" + std::to_string(lines_.size());
+    if (width_ < 125) return
+        "Esc:뒤로 ↑↓/휠 PgUp/Dn Home/End ←→/^휠 드래그:선택 우클릭:복사 n:번호 w:wrap " + state;
+    return "Esc:뒤로 ↑↓/휠:스크롤 PgUp/Dn Home/End ←→/Ctrl+휠:가로 "
+           "드래그:선택 우클릭:복사 n:번호 w:wrap " + state + " | " +
+           std::to_string(line) + "/" + std::to_string(lines_.size());
 }
 
 } // namespace mini_lexical_search::tui

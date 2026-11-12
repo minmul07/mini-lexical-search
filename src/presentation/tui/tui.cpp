@@ -2,6 +2,7 @@
 
 #include "mini_lexical_search/presentation/cli/cli.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
+#include "mini_lexical_search/presentation/tui/clipboard.hpp"
 #include "mini_lexical_search/presentation/tui/index_progress.hpp"
 #include "mini_lexical_search/presentation/tui/input_layout.hpp"
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
@@ -25,6 +26,8 @@ namespace {
 constexpr int kBorderColumns = 2;
 constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
 constexpr auto kDoubleClickInterval = std::chrono::milliseconds(400);
+constexpr auto kCopyNoticeSlideDuration = std::chrono::milliseconds(300);
+constexpr auto kCopyNoticeHoldDuration = std::chrono::seconds(3);
 using Clock = std::chrono::steady_clock;
 
 // 더보기로 추가된 행을 ease-out으로 순차 노출하기 위한 상태다.
@@ -33,6 +36,61 @@ struct MoreReveal {
     ItemKey firstKey;
     Clock::time_point started{};
 };
+
+// 글리프 경계를 지키면서 [left, left + width) 셀을 잘라 고정 폭으로 만든다.
+std::string clipCells(const std::string& text, int left, int width) {
+    std::string result;
+    int column = 0;
+    int used = 0;
+    const int end = left + width;
+    for (const auto& glyph : displayGlyphs(text)) {
+        const int cells = std::max(1, ftxui::string_width(glyph));
+        const int begin = std::max(left, column);
+        const int stop = std::min(end, column + cells);
+        if (begin < stop) {
+            if (begin == column && stop == column + cells) result += glyph;
+            else result += std::string(stop - begin, ' ');
+            used += stop - begin;
+        }
+        column += cells;
+        if (column >= end) break;
+    }
+    if (used < width) result += std::string(width - used, ' ');
+    return result;
+}
+
+// 우측 상단에 겹쳐 그릴 복사 알림 박스다. 오른쪽으로 밀린 만큼만 잘라 그린다.
+ftxui::Element copyNotice(const std::string& message, int boxWidth, int frameWidth,
+                          int offset) {
+    const std::string label = " " + message + " ";
+    std::string horizontal;
+    for (int i = 0; i < boxWidth - 2; ++i) horizontal += "─";
+    const std::string top = "┌" + horizontal + "┐";
+    const std::string middle = "│" + label + "│";
+    const std::string bottom = "└" + horizontal + "┘";
+    const int visible = std::clamp(frameWidth - offset, 0, boxWidth);
+    auto spacer = [](int cells) {
+        return ftxui::filler() | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, cells);
+    };
+    auto line = [&](const std::string& text) {
+        ftxui::Elements parts{ftxui::filler()};
+        if (offset > 0) parts.push_back(spacer(offset));
+        if (visible > 0) {
+            parts.push_back(ftxui::text(clipCells(text, 0, visible)) |
+                            ftxui::color(ftxui::Color::GreenLight) | ftxui::bold |
+                            ftxui::bgcolor(ftxui::Color::RGB(0, 0, 0)));
+        }
+        const int right = frameWidth - offset - visible;
+        if (right > 0) parts.push_back(spacer(right));
+        return ftxui::hbox(std::move(parts));
+    };
+    return ftxui::vbox({
+        line(top),
+        line(middle),
+        line(bottom),
+        ftxui::filler(),
+    });
+}
 
 // 전체 화면을 같은 배경색으로 칠한다.
 ftxui::Element blackBackground(ftxui::Element element) {
@@ -118,6 +176,7 @@ void run(const char* program, SearchApplication& application) {
     float fillOpacity = 1.0F;
     Clock::time_point fillFadeStarted{};
     Clock::time_point lastFrame = Clock::now();
+    Clock::time_point copyNoticeStarted{};
     constexpr auto kFillFadeDuration = std::chrono::milliseconds(750);
     MoreReveal moreReveal;
     IndexProgressModel indexModel;
@@ -326,6 +385,7 @@ void run(const char* program, SearchApplication& application) {
                     if (fragment.highlighted)
                         part |= ftxui::bgcolor(ftxui::Color::RGB(60, 70, 80)) |
                                 ftxui::color(ftxui::Color::White);
+                    if (fragment.selected) part |= ftxui::inverted;
                     fragments.push_back(std::move(part));
                 }
                 visible.push_back(ftxui::hbox(std::move(fragments)));
@@ -334,8 +394,35 @@ void run(const char* program, SearchApplication& application) {
                              ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, viewer->height()) |
                              ftxui::size(ftxui::WIDTH, ftxui::EQUAL, areaWidth));
             column.push_back(ftxui::text(clipped(viewer->footer(), areaWidth)) | ftxui::dim);
-            return blackBackground(ftxui::hbox({ftxui::text("  "),
-                ftxui::vbox(std::move(column)), ftxui::filler()}));
+            auto page = ftxui::hbox({ftxui::text("  "),
+                ftxui::vbox(std::move(column)), ftxui::filler()});
+            if (!viewer->status().empty()) {
+                const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    Clock::now() - copyNoticeStarted).count();
+                const auto slide = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    kCopyNoticeSlideDuration).count();
+                const auto hold = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    kCopyNoticeHoldDuration).count();
+                if (elapsed >= slide + hold + slide) {
+                    viewer->clearStatus();
+                } else {
+                    const bool slideOut = elapsed >= slide + hold;
+                    const auto phase = slideOut ? elapsed - slide - hold : elapsed;
+                    const float progress = std::clamp(
+                        static_cast<float>(phase) / static_cast<float>(slide), 0.0F, 1.0F);
+                    const float eased = ftxui::animation::easing::QuadraticOut(progress);
+                    const int width =
+                        ftxui::string_width(" " + viewer->status() + " ") + 2;
+                    const int frameWidth = width + 2;
+                    const int offset = static_cast<int>(std::lround(
+                        static_cast<float>(frameWidth) * (slideOut ? eased : 1.0F - eased)));
+                    page = ftxui::dbox({std::move(page),
+                                        copyNotice(viewer->status(), width, frameWidth,
+                                                   offset)});
+                    ftxui::animation::RequestAnimationFrame();
+                }
+            }
+            return blackBackground(std::move(page));
         }
         const auto now = Clock::now();
         const auto delta = std::clamp(std::chrono::duration<float>(now - lastFrame).count(),
@@ -585,9 +672,49 @@ void run(const char* program, SearchApplication& application) {
             if (event == ftxui::Event::Escape) {
                 viewer.reset();
                 geometry();
-            } else {
-                viewer->handleEvent(event);
+                return true;
             }
+            if (event.is_mouse()) {
+                const auto& mouse = event.mouse();
+                const int bodyTop = 1 + (viewer->notice().empty() ? 0 : 1);
+                const int column = mouse.x - 2;
+                const int row = mouse.y - bodyTop;
+                if (mouse.button == ftxui::Mouse::Right &&
+                    mouse.motion == ftxui::Mouse::Pressed) {
+                    const auto text = viewer->selectedText();
+                    if (!text.empty()) {
+                        if (copyToClipboard(text)) {
+                            viewer->clearSelection();
+                            viewer->setStatus("Copied to clipboard.");
+                        } else {
+                            viewer->setStatus("Copy failed.");
+                        }
+                        copyNoticeStarted = Clock::now();
+                    }
+                    return true;
+                }
+                if (mouse.motion == ftxui::Mouse::Moved) {
+                    viewer->extendSelection(column, row);
+                    return true;
+                }
+                if (mouse.motion == ftxui::Mouse::Released) {
+                    viewer->endSelection(column, row);
+                    return true;
+                }
+                if (mouse.button == ftxui::Mouse::Left &&
+                    mouse.motion == ftxui::Mouse::Pressed) {
+                    if (column >= 0 && column < areaWidth &&
+                        row >= 0 && row < viewer->height()) {
+                        viewer->beginSelection(column, row);
+                    } else {
+                        viewer->clearSelection();
+                    }
+                    return true;
+                }
+                viewer->handleEvent(event);
+                return true;
+            }
+            viewer->handleEvent(event);
             return true;
         }
         if (event == ftxui::Event::Escape) {

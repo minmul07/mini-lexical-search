@@ -38,7 +38,7 @@ void navigation() {
         view.layout(80, height);
         const int target = 39 - view.offset();
         require(target == std::min(5, (height - 1) / 2), "initial target position incorrect");
-        require(!view.numbers() && view.wrap(), "opening defaults incorrect");
+        require(view.numbers() && view.wrap(), "opening defaults incorrect");
         view.handleEvent(ftxui::Event::ArrowDown);
         require(view.offset() == 40 - target, "down must scroll one display row");
         view.handleEvent(ftxui::Event::ArrowUp);
@@ -90,10 +90,15 @@ void wrapping() {
     require(view.rows().size() > 3, "long line must wrap without excerpt limit");
     require(view.rows().back().line == 2, "blank line must preserve numbering");
     dimensions(view, 22);
-    view.handleEvent(ftxui::Event::Character('n'));
-    require(view.numbers(), "n must enable numbers");
+    require(view.numbers(), "numbers must be on by default");
     require(joined(view.visibleRows()[0]).starts_with("> 1  "), "original line number missing");
     require(joined(view.visibleRows()[1]).starts_with("     "), "continuation must have blank gutter");
+    view.handleEvent(ftxui::Event::Character('n'));
+    require(!view.numbers(), "n must disable numbers");
+    require(joined(view.visibleRows()[0]).starts_with("> "), "target marker must remain without numbers");
+    dimensions(view, 22);
+    view.handleEvent(ftxui::Event::Character('n'));
+    require(view.numbers(), "n must enable numbers");
     dimensions(view, 22);
     view.handleEvent(ftxui::Event::Character('w'));
     require(!view.wrap() && view.rows().size() == 3, "w must disable wrap");
@@ -113,7 +118,7 @@ void wrapping() {
     require(view.horizontalOffset() == 0, "wrapped mode must ignore horizontal wheel");
     view.open("reopened", {"alpha"}, 1, "alpha");
     view.layout(20, 3);
-    require(!view.numbers() && view.wrap(), "reopening must reset preferences");
+    require(view.numbers() && view.wrap(), "reopening must reset preferences");
 }
 
 void resizeAndUnicode() {
@@ -148,6 +153,7 @@ void resizeAndUnicode() {
         }
     }
     view.open("wide", {"한글e\xCC\x81👨‍👩‍👧👍🏽🇰🇷"}, 1, "한글");
+    view.toggleNumbers();
     view.layout(5, 30);
     std::string all;
     for (const auto& row : view.visibleRows()) all += joined(row).substr(2);
@@ -156,6 +162,52 @@ void resizeAndUnicode() {
     view.scrollHorizontal(1);
     require(joined(view.visibleRows()[0]).substr(2).starts_with(" "), "partial wide glyph must retain cell position");
 }
+
+void selection() {
+    ViewerView view;
+    view.open("select", {"alpha beta", "gamma delta", "마지막 줄"}, 1, "alpha");
+    view.layout(40, 8);
+    require(view.numbers(), "selection test expects default numbers");
+    const std::string first = joined(view.visibleRows()[0]);
+    const auto textStart = first.find("alpha");
+    require(textStart != std::string::npos, "selection body start missing");
+    const int gutter = static_cast<int>(textStart);
+
+    view.beginSelection(gutter, 0);
+    view.extendSelection(gutter + 8, 1);
+    view.endSelection(gutter + 8, 1);
+    require(view.hasSelection(), "drag must create a selection");
+    require(view.selectedText() == "alpha beta\ngamma del", "selected text incorrect");
+    require(view.selectedText().find('1') == std::string::npos,
+            "line number leaked into selection");
+
+    view.beginSelection(gutter, 0);
+    view.endSelection(gutter, 0);
+    require(!view.hasSelection() && view.selectedText().empty(), "click must not select");
+
+    view.beginSelection(gutter, 0);
+    view.extendSelection(gutter + 4, 0);
+    view.endSelection(gutter + 4, 0);
+    const auto highlighted = view.visibleRows();
+    require(!highlighted.empty() && highlighted[0][0].text.starts_with("> 1"),
+            "gutter must keep the marker");
+    require(!highlighted[0][0].selected, "gutter must not be selected");
+    bool bodySelected = false;
+    for (const auto& part : highlighted[0]) bodySelected = bodySelected || part.selected;
+    require(bodySelected, "body selection highlight missing");
+
+    view.handleEvent(wheel(ftxui::Mouse::WheelDown));
+    require(!view.hasSelection() && view.selectedText().empty(),
+            "scrolling must clear selection");
+
+    view.open("wide select", {"한글abc"}, 1, "zzz");
+    view.layout(20, 4);
+    const auto wideStart = static_cast<int>(joined(view.visibleRows()[0]).find("한"));
+    view.beginSelection(wideStart, 0);
+    view.extendSelection(wideStart + 1, 0);
+    view.endSelection(wideStart + 1, 0);
+    require(view.selectedText() == "한", "partial wide glyph selection must keep the glyph intact");
+}
 } // namespace
 
 int main() {
@@ -163,6 +215,7 @@ int main() {
         navigation();
         wrapping();
         resizeAndUnicode();
+        selection();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

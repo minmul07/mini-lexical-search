@@ -9,6 +9,7 @@ namespace mini_lexical_search::tui {
 struct Fragment {
     std::string text;
     bool highlighted = false;
+    bool selected = false;
 };
 using PreviewRow = std::vector<Fragment>;
 // 제어 문자는 공백으로 치환하며 원문의 토큰 경계로 강조한다.
