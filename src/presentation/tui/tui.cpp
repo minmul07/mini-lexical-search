@@ -3,6 +3,7 @@
 #include "mini_lexical_search/presentation/cli/cli.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/presentation/tui/clipboard.hpp"
+#include "mini_lexical_search/presentation/tui/home_title.hpp"
 #include "mini_lexical_search/presentation/tui/index_progress.hpp"
 #include "mini_lexical_search/presentation/tui/input_layout.hpp"
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
@@ -543,12 +544,28 @@ void run(const char* program, SearchApplication& application) {
                 }) | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, homeLayout.fieldWidth),
                 ftxui::filler(),
             });
-            return blackBackground(ftxui::dbox({
-                std::move(fieldLayer),
-                std::move(detailLayer),
-                ftxui::vbox({ftxui::text(clipped(workingJob().label(), ftxui::Terminal::Size().dimx)) |
-                                 ftxui::align_right, ftxui::filler()}),
-            }));
+            const auto terminalSize = ftxui::Terminal::Size();
+            const auto title = homeTitle(terminalSize.dimx, homeLayout.boxTop);
+            ftxui::Elements layers;
+            layers.push_back(std::move(fieldLayer));
+            layers.push_back(std::move(detailLayer));
+            if (!title.lines.empty()) {
+                ftxui::Elements titleLines;
+                for (const auto& line : title.lines) {
+                    titleLines.push_back(ftxui::text(line) | ftxui::bold |
+                                         ftxui::color(ftxui::Color::White));
+                }
+                layers.push_back(ftxui::vbox({
+                    ftxui::text("") | ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, title.top),
+                    ftxui::vbox(std::move(titleLines)) | ftxui::hcenter,
+                    ftxui::filler(),
+                }));
+            }
+            layers.push_back(ftxui::vbox(
+                {ftxui::text(clipped(workingJob().label(), terminalSize.dimx)) |
+                     ftxui::align_right,
+                 ftxui::filler()}));
+            return blackBackground(ftxui::dbox(std::move(layers)));
         }
         ftxui::Elements column{std::move(field)};
         if (!view.query.empty()) {

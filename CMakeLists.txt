@@ -59,6 +59,7 @@ target_link_libraries(mini_lexical_search_cli
 
 add_library(mini_lexical_search_tui
     src/presentation/tui/clipboard.cpp
+    src/presentation/tui/home_title.cpp
     src/presentation/tui/index_progress.cpp
     src/presentation/tui/input_layout.cpp
     src/presentation/tui/result_view.cpp

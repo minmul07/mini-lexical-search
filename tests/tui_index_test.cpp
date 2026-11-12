@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "ftxui.hpp"
+#include "mini_lexical_search/presentation/tui/home_title.hpp"
 #include "mini_lexical_search/presentation/tui/index_progress.hpp"
 
 using namespace mini_lexical_search;
@@ -132,6 +133,27 @@ void testGeometry() {
     require(first.detailHeight > 0, "detail area missing");
 }
 
+void testTitle() {
+    const auto art = homeTitle(80, 10);
+    require(art.top == 2 && art.lines.size() == 6, "home title art");
+    require(art.top + static_cast<int>(art.lines.size()) + 2 == 10, "home title gap");
+    const int width = ftxui::string_width(art.lines.front());
+    require(width > 0, "home title width");
+    for (const auto& line : art.lines) {
+        require(ftxui::string_width(line) == width, "home title line width");
+    }
+
+    const auto compact = homeTitle(40, 10);
+    require(compact.top == 7 && compact.lines.size() == 1 &&
+                compact.lines.front() == "SEARCH",
+            "home title fallback");
+
+    require(homeTitle(80, 8).lines.size() == 1, "home title status overlap guard");
+    require(homeTitle(80, 7).lines.size() == 1, "home title compact height");
+    require(homeTitle(40, 2).lines.empty(), "home title missing height");
+    require(homeTitle(7, 10).lines.empty(), "home title missing width");
+}
+
 void testFill() {
     auto render = [](float progress, float opacity = 1.0F) {
         auto screen = ftxui::Screen::Create(ftxui::Dimension::Fixed(8),
@@ -182,6 +204,7 @@ int main() {
     try {
         testModel();
         testGeometry();
+        testTitle();
         testFill();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
