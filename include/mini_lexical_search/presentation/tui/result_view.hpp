@@ -16,6 +16,9 @@ std::vector<PreviewRow> preview(const std::string& text, const std::vector<std::
                                 int width, int maxRows = 3);
 std::vector<std::string> displayGlyphs(const std::string& text);
 std::string clipped(const std::string& text, int width);
+// 발췌·생략 없이 원문 전체를 셀 너비에 맞춰 줄바꿈한다.
+std::vector<PreviewRow> wrapped(const std::string& text, const std::vector<std::string>& terms,
+                                int width);
 
 enum class ViewMode { Home, Results, Text };
 enum class ItemKind { Line, More, Previous, Next };

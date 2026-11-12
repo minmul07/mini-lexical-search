@@ -87,6 +87,10 @@ public:
     // ./ 등의 상대 경로 표현은 어휘적으로 정규화하여 현재 페이지에서 찾는다.
     SearchPage expandFile(const std::string& relativePath);
 
+    // 현재 페이지의 파일을 디스크에서 다시 읽는다. 검색 세션은 변경하지 않는다.
+    // 원본 줄 순서를 유지하며 파일 열기·읽기 실패 시 예외를 던진다.
+    std::vector<std::string> readFile(const std::string& relativePath) const;
+
     // 동기적으로 호출하며 콜백에서 앱을 재호출하거나 동시에 접근하지 않는다.
     // 원문을 캐시하지 않는 전체 출력. 콜백 예외는 호출자에게 전달한다.
     // group은 파일당 한 번, line은 매칭 행당 한 번, warning은 읽기 실패 시 호출한다.

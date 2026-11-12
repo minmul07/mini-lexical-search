@@ -389,6 +389,32 @@ void testPageBoundaries(const fs::path& root) {
     }
 }
 
+void testViewerRead(const fs::path& root) {
+    const auto docs = root / "docs";
+    fs::create_directories(docs);
+    const auto path = docs / " leading file .txt";
+    write(path, "alpha\n\nnot a match\nALPHA\n");
+    SearchApplication app(root / "index.bin");
+    app.index(docs);
+    requireFailure([&] { app.readFile(" leading file .txt"); }, "read without session accepted");
+    const auto page = app.search("alpha");
+    const auto content = app.readFile("./ leading file .txt");
+    require(content == std::vector<std::string>({"alpha", "", "not a match", "ALPHA"}),
+            "viewer must read all original lines, preserving blanks and spaces in paths");
+    requireFailure([&] { app.readFile("../outside.txt"); }, "non-page path accepted");
+    write(path, "new content without final newline");
+    require(app.readFile(" leading file .txt") == std::vector<std::string>({"new content without final newline"}),
+            "viewer must read fresh disk content");
+    fs::remove(path);
+    requireFailure([&] { app.readFile(" leading file .txt"); }, "deleted file read accepted");
+    const auto preserved = app.currentPage();
+    require(preserved.number == page.number && preserved.files[0].lines.size() == page.files[0].lines.size() &&
+            preserved.files[0].lines[0].text == "alpha" && preserved.files[0].warning.empty(),
+            "viewer reads or failures modified search session");
+    write(path, "");
+    require(app.readFile(" leading file .txt").empty(), "empty file must return no lines");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -401,6 +427,7 @@ int main(int argc, char** argv) {
         testBrowsing(root / "browsing");
         testPages(root / "pages");
         testPageBoundaries(root / "boundaries");
+        testViewerRead(root / "viewer");
         testCorruptionAndFirstSave(root / "failures");
         fs::remove_all(root);
     } catch (const std::exception& error) {

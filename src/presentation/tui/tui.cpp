@@ -5,6 +5,7 @@
 #include "mini_lexical_search/presentation/tui/index_progress.hpp"
 #include "mini_lexical_search/presentation/tui/input_layout.hpp"
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
+#include "mini_lexical_search/presentation/tui/viewer_view.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -75,6 +76,7 @@ void run(const char* program, SearchApplication& application) {
     std::string content;
     int cursor = 0;
     ResultView view;
+    std::optional<ViewerView> viewer;
     std::string sessionQuery;
     std::string sessionElapsed;
     int areaWidth = 1;
@@ -89,6 +91,10 @@ void run(const char* program, SearchApplication& application) {
     auto geometry = [&] {
         const auto size = ftxui::Terminal::Size();
         areaWidth = std::max(1, size.dimx - 4);
+        if (viewer) {
+            viewer->layout(areaWidth, std::max(1, size.dimy - 2 - !viewer->notice().empty()));
+            return;
+        }
         fieldWidth = view.mode == ViewMode::Home ? homeFieldWidth(size.dimx)
                                                  : std::max(1, areaWidth - kBorderColumns);
         reflowInput(content, cursor, fieldWidth);
@@ -252,7 +258,16 @@ void run(const char* program, SearchApplication& application) {
     auto activate = [&] {
         if (!view.selection()) return;
         const auto key = view.selection()->key;
-        if (key.kind == ItemKind::Line) return;
+        if (key.kind == ItemKind::Line) {
+            viewer.emplace();
+            try {
+                viewer->open(key.path, application.readFile(key.path), key.line, view.query);
+            } catch (const std::exception& error) {
+                viewer->showError(key.path, error.what());
+            }
+            geometry();
+            return;
+        }
         std::optional<ItemKey> firstNew;
         if (key.kind == ItemKind::More) {
             const int scrollOffset = view.offset();
@@ -293,6 +308,30 @@ void run(const char* program, SearchApplication& application) {
     auto component = ftxui::Renderer(focusGroup, [&] {
         if (showPrompt) return blackBackground(ftxui::filler());
         geometry();
+        if (viewer) {
+            ftxui::Elements column{
+                ftxui::text(clipped("[" + viewer->path() + "]", areaWidth)) | ftxui::bold};
+            if (!viewer->notice().empty())
+                column.push_back(ftxui::text(clipped(viewer->notice(), areaWidth)) | ftxui::dim);
+            ftxui::Elements visible;
+            for (const auto& row : viewer->visibleRows()) {
+                ftxui::Elements fragments;
+                for (const auto& fragment : row) {
+                    auto part = ftxui::text(fragment.text);
+                    if (fragment.highlighted)
+                        part |= ftxui::bgcolor(ftxui::Color::RGB(60, 70, 80)) |
+                                ftxui::color(ftxui::Color::White);
+                    fragments.push_back(std::move(part));
+                }
+                visible.push_back(ftxui::hbox(std::move(fragments)));
+            }
+            column.push_back(ftxui::vbox(std::move(visible)) |
+                             ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, viewer->height()) |
+                             ftxui::size(ftxui::WIDTH, ftxui::EQUAL, areaWidth));
+            column.push_back(ftxui::text(clipped(viewer->footer(), areaWidth)) | ftxui::dim);
+            return blackBackground(ftxui::hbox({ftxui::text("  "),
+                ftxui::vbox(std::move(column)), ftxui::filler()}));
+        }
         const auto now = Clock::now();
         const auto delta = std::clamp(std::chrono::duration<float>(now - lastFrame).count(),
                                       0.0F, 0.1F);
@@ -537,6 +576,15 @@ void run(const char* program, SearchApplication& application) {
             return true;
         }
         geometry();
+        if (viewer) {
+            if (event == ftxui::Event::Escape) {
+                viewer.reset();
+                geometry();
+            } else {
+                viewer->handleEvent(event);
+            }
+            return true;
+        }
         if (event == ftxui::Event::Escape) {
             if (view.mode != ViewMode::Home) {
                 application.clearSearch();

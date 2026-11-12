@@ -72,6 +72,10 @@ add_executable(result_view_test result_view_test.cpp)
 target_link_libraries(result_view_test PRIVATE mini_lexical_search_tui ftxui)
 add_test(NAME result_view_test COMMAND result_view_test)
 
+add_executable(viewer_view_test viewer_view_test.cpp)
+target_link_libraries(viewer_view_test PRIVATE mini_lexical_search_tui ftxui)
+add_test(NAME viewer_view_test COMMAND viewer_view_test)
+
 add_executable(tui_input_test tui_input_test.cpp)
 target_link_libraries(tui_input_test PRIVATE mini_lexical_search_tui ftxui)
 add_test(NAME tui_input_test COMMAND tui_input_test)

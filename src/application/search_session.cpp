@@ -12,6 +12,7 @@
 #include "mini_lexical_search/application/log.hpp"
 #include "mini_lexical_search/application/working_job.hpp"
 #include "mini_lexical_search/infrastructure/index_storage.hpp"
+#include "mini_lexical_search/infrastructure/document_io.hpp"
 #include "mini_lexical_search/infrastructure/matching_lines.hpp"
 
 namespace mini_lexical_search {
@@ -207,6 +208,22 @@ SearchPage SearchApplication::expandFile(const std::string& relativePath) {
             }
             return currentPage();
         }
+    }
+    throw std::invalid_argument("file is not on the current page: " + relativePath);
+}
+
+std::vector<std::string> SearchApplication::readFile(const std::string& relativePath) const {
+    requireSearch();
+    const auto normalized = std::filesystem::path(relativePath).lexically_normal().generic_string();
+    const auto [first, end] = session_->pages[session_->page];
+    for (auto i = first; i < end; ++i) {
+        const auto& file = session_->files[i].result;
+        if (file.relativePath != normalized) continue;
+        std::vector<std::string> lines;
+        readDocumentLines(file.document, [&](std::uint32_t, const std::string& text) {
+            lines.push_back(text);
+        });
+        return lines;
     }
     throw std::invalid_argument("file is not on the current page: " + relativePath);
 }
