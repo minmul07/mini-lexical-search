@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -18,7 +19,8 @@ struct ViewerRow {
     std::size_t firstGlyph = 0;
 };
 
-// 터미널 렌더링과 독립적인 읽기 전용 뷰어. 원문은 열린 동안만 소유한다.
+// 터미널 렌더링과 독립적인 읽기 전용 뷰어. 원문은 열린 동안만 소유하고,
+// 표시 행은 현재 뷰포트와 스크롤에 필요한 원본 줄만 그때그때 계산한다.
 class ViewerView {
 public:
     void open(std::string path, std::vector<std::string> lines, std::uint32_t target,
@@ -47,18 +49,44 @@ public:
     const std::string& status() const { return status_; }
     bool numbers() const { return numbers_; }
     bool wrap() const { return wrap_; }
-    int offset() const { return offset_; }
     int horizontalOffset() const { return horizontal_; }
     int height() const { return height_; }
-    const std::vector<ViewerRow>& rows() const { return rows_; }
+    // 현재 화면 첫 표시 행이 가리키는 원본 줄·글리프 위치.
+    std::size_t topLine() const { return top_.line; }
+    std::size_t topGlyph() const { return top_.glyph; }
 
 private:
+    struct Position {
+        std::size_t line = 0;
+        std::size_t glyph = 0; // 표시 행이 시작하는 글리프 인덱스
+        bool operator==(const Position&) const = default;
+        bool operator<(const Position& other) const {
+            return line != other.line ? line < other.line : glyph < other.glyph;
+        }
+    };
+    struct LineLayout {
+        std::vector<std::size_t> starts;   // 표시 행별 시작 글리프. 항상 계산한다.
+        std::vector<PreviewRow> segments;  // 표시용 조각. materialize일 때만 채운다.
+    };
     struct SelectionPoint {
-        int row = 0;
+        int row = 0; // 현재 뷰포트 기준 표시 행
         int cell = 0;
         bool operator==(const SelectionPoint&) const = default;
     };
-    void rebuild();
+    // 표시 행 경계만 필요하면 materialize=false로 측정한다.
+    LineLayout scanLine(std::size_t line, bool materialize) const;
+    std::size_t segmentIndex(const LineLayout& layout, std::size_t glyph) const;
+    Position segmentPosition(std::size_t line, std::size_t glyph) const;
+    Position initialTop() const;
+    Position lastRow() const;
+    Position retreat(Position from, int rows) const;
+    Position advance(Position from, int rows) const;
+    void ensureMaxTop();
+    void ensureMaxLineWidth();
+    void resetLayout();
+    void ensureVisible() const;
+    void jumpHome();
+    void jumpEnd();
     SelectionPoint pointAt(int column, int row) const;
     std::pair<SelectionPoint, SelectionPoint> selectionRange() const;
     int gutter() const;
@@ -66,18 +94,22 @@ private:
     std::string path_;
     std::string notice_;
     std::vector<std::string> lines_;
-    std::vector<std::string> terms_;
-    std::vector<ViewerRow> rows_;
+    std::unordered_set<std::string> terms_;
+    Position top_;
+    Position resetTop_;
+    Position maxTop_;
+    mutable std::vector<ViewerRow> visible_;
     std::size_t target_ = 0;
     int width_ = 1;
     int height_ = 1;
-    int offset_ = 0;
-    int maxOffset_ = 0;
     int horizontal_ = 0;
     int maxLineWidth_ = 0;
     SelectionPoint selectionAnchor_;
     SelectionPoint selectionFocus_;
     std::string status_;
+    mutable bool visibleValid_ = false;
+    bool maxTopKnown_ = false;
+    bool maxLineWidthKnown_ = false;
     bool selecting_ = false;
     bool hasSelection_ = false;
     bool numbers_ = true;

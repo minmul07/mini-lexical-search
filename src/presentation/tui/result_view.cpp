@@ -1,7 +1,6 @@
 #include "mini_lexical_search/presentation/tui/result_view.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <optional>
 #include <sstream>
 #include "ftxui.hpp"
@@ -113,11 +112,6 @@ std::string clipped(const std::string& text, int width) {
     const auto rows = preview(text, {}, width, 1);
     for (const auto& part : rows.front()) result += part.text;
     return result;
-}
-
-std::vector<PreviewRow> wrapped(const std::string& text, const std::vector<std::string>& terms,
-                                int width) {
-    return pack(glyphs(text, terms), 0, std::max(1, width), std::numeric_limits<int>::max(), false);
 }
 
 void ResultView::home() { *this = ResultView{}; }

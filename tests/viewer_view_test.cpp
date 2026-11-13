@@ -36,48 +36,108 @@ void navigation() {
         ViewerView view;
         view.open("공백 경로.txt", lines, 40, "alpha");
         view.layout(80, height);
-        const int target = 39 - view.offset();
+        const int top = static_cast<int>(view.topLine());
+        const int target = 39 - top;
         require(target == std::min(5, (height - 1) / 2), "initial target position incorrect");
         require(view.numbers() && view.wrap(), "opening defaults incorrect");
         view.handleEvent(ftxui::Event::ArrowDown);
-        require(view.offset() == 40 - target, "down must scroll one display row");
+        require(static_cast<int>(view.topLine()) == 40 - target,
+                "down must scroll one display row");
         view.handleEvent(ftxui::Event::ArrowUp);
-        require(view.offset() == 39 - target, "up must scroll one display row");
+        require(static_cast<int>(view.topLine()) == 39 - target,
+                "up must scroll one display row");
         view.handleEvent(ftxui::Event::PageDown);
-        require(view.offset() == 39 - target + height, "page down must use viewport height");
+        require(static_cast<int>(view.topLine()) == 39 - target + height,
+                "page down must use viewport height");
         view.handleEvent(ftxui::Event::PageUp);
-        require(view.offset() == 39 - target, "page up must restore offset");
+        require(static_cast<int>(view.topLine()) == 39 - target,
+                "page up must restore offset");
         view.handleEvent(wheel(ftxui::Mouse::WheelDown));
-        require(view.offset() == 42 - target, "wheel must scroll three rows");
+        require(static_cast<int>(view.topLine()) == 42 - target,
+                "wheel must scroll three rows");
         view.handleEvent(wheel(ftxui::Mouse::WheelUp));
-        require(view.offset() == 39 - target, "wheel up incorrect");
+        require(static_cast<int>(view.topLine()) == 39 - target, "wheel up incorrect");
         view.handleEvent(ftxui::Event::End);
-        require(view.offset() == 100 - height, "end must show file end");
+        require(static_cast<int>(view.topLine()) == 100 - height, "end must show file end");
         view.handleEvent(ftxui::Event::Home);
-        require(view.offset() == 0, "home must show file start");
+        require(view.topLine() == 0, "home must show file start");
         view.scroll(-1000);
-        require(view.offset() == 0, "scroll underflow");
+        require(view.topLine() == 0, "scroll underflow");
     }
     ViewerView view;
     view.open("first", lines, 1, "alpha");
     view.layout(80, 20);
-    require(view.offset() == 0 && joined(view.visibleRows()[0]).starts_with("> "), "first line marker missing");
+    require(view.topLine() == 0 && joined(view.visibleRows()[0]).starts_with("> "),
+            "first line marker missing");
     view.open("last", lines, 100, "alpha");
     view.layout(80, 20);
-    require(view.offset() == 94 && joined(view.visibleRows()[5]).starts_with("> "),
+    require(view.topLine() == 94 && joined(view.visibleRows()[5]).starts_with("> "),
             "last matching line must stay five rows below body top, allowing blank space below");
     view.handleEvent(ftxui::Event::ArrowUp);
     view.handleEvent(ftxui::Event::ArrowDown);
-    require(view.offset() == 94, "trailing space must remain scrollable after moving up");
+    require(view.topLine() == 94, "trailing space must remain scrollable after moving up");
+    view.handleEvent(ftxui::Event::Home);
+    require(view.topLine() == 0, "home must show file start for the last target");
+    view.handleEvent(ftxui::Event::End);
+    require(view.topLine() == 94, "end must preserve the initial bottom limit near the file end");
     view.open("changed", {"one", "two"}, 40, "alpha");
     view.layout(80, 20);
-    require(!view.notice().empty() && joined(view.visibleRows()[1]).starts_with("> "), "missing line fallback");
+    require(!view.notice().empty() && joined(view.visibleRows()[1]).starts_with("> "),
+            "missing line fallback");
+    view.handleEvent(ftxui::Event::End);
+    require(view.topLine() == 0, "end must stay at the start when the file is shorter than the viewport");
+    view.handleEvent(ftxui::Event::PageDown);
+    require(view.topLine() == 0, "page down must not pass the end of a short file");
     view.open("empty", {}, 1, "alpha");
     view.layout(1, 1);
     require(view.visibleRows().empty() && !view.notice().empty(), "empty file needs notice");
     view.showError("deleted", "cannot read document");
     view.layout(20, 3);
     require(view.path() == "deleted" && view.notice() == "cannot read document", "read error lost");
+}
+
+void wrappedNavigation() {
+    std::vector<std::string> lines;
+    for (char value : {'a', 'b', 'c', 'd', 'e'}) lines.emplace_back(51, value);
+    ViewerView view;
+    view.open("wrapped navigation", lines, 1, "zzz");
+    view.layout(22, 5);
+    require(view.topLine() == 0 && view.topGlyph() == 0, "wrapped navigation start incorrect");
+    view.handleEvent(ftxui::Event::PageDown);
+    require(view.topLine() == 1 && view.topGlyph() == 34,
+            "page down must cross a wrapped line boundary");
+    require(joined(view.visibleRows()[0]).substr(5).starts_with("bbb"),
+            "page down landed on the wrong wrapped segment");
+    view.handleEvent(ftxui::Event::Character('w'));
+    require(!view.wrap() && view.topLine() == 1 && view.topGlyph() == 0,
+            "wrap off must preserve the source line and reset the glyph");
+    view.handleEvent(ftxui::Event::Character('w'));
+    require(view.wrap() && view.topLine() == 1 && view.topGlyph() == 0,
+            "wrap on must preserve the source line and start at its first segment");
+    view.handleEvent(ftxui::Event::ArrowDown);
+    view.handleEvent(ftxui::Event::ArrowDown);
+    require(view.topLine() == 1 && view.topGlyph() == 34,
+            "arrow down must reach the third wrapped row");
+    view.handleEvent(ftxui::Event::Character('n'));
+    require(view.topLine() == 1 && view.topGlyph() == 20,
+            "number toggle must keep the glyph inside the new wrapped row");
+    view.handleEvent(ftxui::Event::Character('n'));
+    require(view.topLine() == 1 && view.topGlyph() == 17,
+            "number toggle back must map the same glyph to its containing row");
+    view.handleEvent(ftxui::Event::PageUp);
+    require(view.topLine() == 0 && view.topGlyph() == 0, "page up must return to the start");
+    view.handleEvent(ftxui::Event::ArrowDown);
+    require(view.topLine() == 0 && view.topGlyph() == 17,
+            "down must move one wrapped display row");
+    view.handleEvent(ftxui::Event::ArrowUp);
+    require(view.topLine() == 0 && view.topGlyph() == 0,
+            "up must move one wrapped display row");
+    view.handleEvent(ftxui::Event::End);
+    require(view.topLine() == 3 && view.topGlyph() == 17, "end must show the last wrapped screen");
+    require(joined(view.visibleRows()[0]).substr(5).starts_with("ddd"),
+            "end landed on the wrong wrapped segment");
+    view.handleEvent(ftxui::Event::Home);
+    require(view.topLine() == 0 && view.topGlyph() == 0, "home must return to the start");
 }
 
 void wrapping() {
@@ -87,12 +147,14 @@ void wrapping() {
     std::string hits;
     for (const auto& row : view.visibleRows()) hits += joined(row, true);
     require(hits == "alphaALPHA", "whole token highlighting incorrect");
-    require(view.rows().size() > 3, "long line must wrap without excerpt limit");
-    require(view.rows().back().line == 2, "blank line must preserve numbering");
+    require(view.visibleRows().size() > 3, "long line must wrap without excerpt limit");
+    require(joined(view.visibleRows().back()).starts_with("  3  "),
+            "blank line must preserve numbering");
     dimensions(view, 22);
     require(view.numbers(), "numbers must be on by default");
     require(joined(view.visibleRows()[0]).starts_with("> 1  "), "original line number missing");
-    require(joined(view.visibleRows()[1]).starts_with("     "), "continuation must have blank gutter");
+    require(joined(view.visibleRows()[1]).starts_with("     "),
+            "continuation must have blank gutter");
     view.handleEvent(ftxui::Event::Character('n'));
     require(!view.numbers(), "n must disable numbers");
     require(joined(view.visibleRows()[0]).starts_with("> "), "target marker must remain without numbers");
@@ -101,16 +163,19 @@ void wrapping() {
     require(view.numbers(), "n must enable numbers");
     dimensions(view, 22);
     view.handleEvent(ftxui::Event::Character('w'));
-    require(!view.wrap() && view.rows().size() == 3, "w must disable wrap");
+    require(!view.wrap() && view.visibleRows().size() == 3, "w must disable wrap");
+    dimensions(view, 22);
     view.handleEvent(ftxui::Event::ArrowRight);
     require(view.horizontalOffset() == 1, "right must scroll one cell");
     view.handleEvent(wheel(ftxui::Mouse::WheelDown, true));
-    require(view.horizontalOffset() == 4 && view.offset() == 0, "Ctrl+wheel must only scroll horizontally");
+    require(view.horizontalOffset() == 4 && view.topLine() == 0,
+            "Ctrl+wheel must only scroll horizontally");
     view.handleEvent(wheel(ftxui::Mouse::WheelUp, true));
     view.handleEvent(ftxui::Event::ArrowLeft);
     require(view.horizontalOffset() == 0, "horizontal reverse movement incorrect");
     view.scrollHorizontal(10000);
-    require(view.horizontalOffset() > 0 && view.horizontalOffset() < 200, "horizontal end not clamped");
+    require(view.horizontalOffset() > 0 && view.horizontalOffset() < 200,
+            "horizontal end not clamped");
     dimensions(view, 22);
     view.handleEvent(ftxui::Event::Character('w'));
     require(view.wrap() && view.horizontalOffset() == 0, "enabling wrap must reset horizontal offset");
@@ -119,6 +184,12 @@ void wrapping() {
     view.open("reopened", {"alpha"}, 1, "alpha");
     view.layout(20, 3);
     require(view.numbers() && view.wrap(), "reopening must reset preferences");
+
+    ViewerView combining;
+    combining.open("combining", {std::string("\xCC\x81") + "alpha beta"}, 1, "alpha");
+    combining.layout(40, 4);
+    require(joined(combining.visibleRows()[0], true) == "alpha",
+            "leading combining mark must not shift highlight offsets");
 }
 
 void koreanShortcuts() {
@@ -150,17 +221,19 @@ void resizeAndUnicode() {
     view.open("unicode", {"first", source, "", "last"}, 2, "자료구조");
     view.layout(22, 3);
     view.scroll(5);
-    const auto anchor = view.rows()[view.offset()];
+    const std::size_t anchorLine = view.topLine();
+    const std::size_t anchorGlyph = view.topGlyph();
+    require(anchorLine == 1, "resize test expects the second source line");
     view.layout(12, 3);
-    const auto after = view.rows()[view.offset()];
-    require(after.line == anchor.line && after.firstGlyph <= anchor.firstGlyph, "resize lost source anchor");
-    const auto next = view.rows()[view.offset() + 1];
-    require(next.line != after.line || next.firstGlyph > anchor.firstGlyph, "resize did not choose containing row");
-    const auto offset = view.offset();
+    require(view.topLine() == anchorLine && view.topGlyph() <= anchorGlyph,
+            "resize lost source anchor");
+    const auto afterLine = view.topLine();
+    const auto afterGlyph = view.topGlyph();
     view.layout(12, 3);
-    require(view.offset() == offset, "repeated layout must preserve scroll");
+    require(view.topLine() == afterLine && view.topGlyph() == afterGlyph,
+            "repeated layout must preserve scroll");
     view.handleEvent(ftxui::Event::Character('n'));
-    require(view.rows()[view.offset()].line == anchor.line, "number toggle lost source line");
+    require(view.topLine() == anchorLine, "number toggle lost source line");
     for (int width = 1; width <= 45; ++width) {
         view.open("unicode", {source, "\t\x1b[31m", ""}, 1, "자료구조");
         view.layout(width, 300);
@@ -170,6 +243,7 @@ void resizeAndUnicode() {
         view.toggleNumbers();
         dimensions(view, width);
         view.toggleWrap();
+        dimensions(view, width);
         for (int cells = 0; cells < 12; ++cells) {
             view.scrollHorizontal(1);
             dimensions(view, width);
@@ -183,7 +257,8 @@ void resizeAndUnicode() {
     require(all == "한글e\xCC\x81👨‍👩‍👧👍🏽🇰🇷", "wrapping split or lost grapheme clusters");
     view.toggleWrap();
     view.scrollHorizontal(1);
-    require(joined(view.visibleRows()[0]).substr(2).starts_with(" "), "partial wide glyph must retain cell position");
+    require(joined(view.visibleRows()[0]).substr(2).starts_with(" "),
+            "partial wide glyph must retain cell position");
 }
 
 void selection() {
@@ -236,6 +311,7 @@ void selection() {
 int main() {
     try {
         navigation();
+        wrappedNavigation();
         wrapping();
         koreanShortcuts();
         resizeAndUnicode();
