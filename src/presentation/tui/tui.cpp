@@ -24,6 +24,7 @@ namespace mini_lexical_search::tui {
 namespace {
 
 constexpr int kBorderColumns = 2;
+constexpr int kInputPadding = 1;
 constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
 constexpr auto kDoubleClickInterval = std::chrono::milliseconds(700);
 constexpr auto kCopyNoticeSlideDuration = std::chrono::milliseconds(300);
@@ -140,6 +141,7 @@ void run(const char* program, SearchApplication& application) {
     std::string sessionElapsed;
     int areaWidth = 1;
     int fieldWidth = 1;
+    int inputPadding = 0;
     int inputHeight = 1;
     ftxui::Box outputBox;
     ftxui::Box inputBox;
@@ -156,7 +158,8 @@ void run(const char* program, SearchApplication& application) {
         }
         fieldWidth = view.mode == ViewMode::Home ? homeFieldWidth(size.dimx)
                                                  : std::max(1, areaWidth - kBorderColumns);
-        reflowInput(content, cursor, fieldWidth);
+        inputPadding = fieldWidth > 2 * kInputPadding ? kInputPadding : 0;
+        reflowInput(content, cursor, std::max(1, fieldWidth - 2 * inputPadding));
         inputHeight = std::min({3, lineCount(content), std::max(1, size.dimy - 6)});
         if (view.mode == ViewMode::Home) {
             homeLayout = homeGeometry(size.dimx, size.dimy, inputHeight);
@@ -509,7 +512,15 @@ void run(const char* program, SearchApplication& application) {
                 ftxui::animation::RequestAnimationFrame();
             }
         }
-        auto inner = input->Render() | ftxui::size(ftxui::WIDTH, ftxui::EQUAL, fieldWidth) |
+        ftxui::Elements inputRow;
+        if (inputPadding > 0) inputRow.push_back(ftxui::text(" "));
+        inputRow.push_back(input->Render() |
+                           ftxui::size(ftxui::WIDTH, ftxui::EQUAL,
+                                       std::max(1, fieldWidth - 2 * inputPadding)) |
+                           ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, inputHeight));
+        if (inputPadding > 0) inputRow.push_back(ftxui::text(" "));
+        auto inner = ftxui::hbox(std::move(inputRow)) |
+                     ftxui::size(ftxui::WIDTH, ftxui::EQUAL, fieldWidth) |
                      ftxui::size(ftxui::HEIGHT, ftxui::EQUAL, inputHeight);
         if ((indexRunning || fillFinishing || fillFading) && fill > 0.0F) {
             inner = progressFill(std::move(inner), fill, fillOpacity);

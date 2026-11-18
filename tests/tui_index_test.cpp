@@ -119,13 +119,15 @@ void testModel() {
 void testGeometry() {
     for (int height : {6, 10, 24, 40}) {
         const auto geometry = homeGeometry(80, height, 1);
-        require(geometry.fieldWidth == 78, "home field width");
-        require(geometry.fieldLeft == 1, "home field left");
+        require(geometry.fieldWidth == 76, "home field width");
+        require(geometry.fieldLeft == 2, "home field left");
         require(geometry.boxHeight == 3, "home box height");
         require(geometry.detailTop == geometry.boxTop + geometry.boxHeight + 1,
                 "detail offset");
         require(geometry.detailHeight >= 0, "negative detail height");
     }
+    const auto narrow = homeGeometry(20, 12, 1);
+    require(narrow.fieldWidth == 16 && narrow.fieldLeft == 2, "narrow home side padding");
     const auto first = homeGeometry(120, 30, 1);
     const auto second = homeGeometry(120, 30, 3);
     require(first.fieldWidth == 100 && first.fieldLeft == 10, "max home width");

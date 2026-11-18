@@ -11,6 +11,7 @@ namespace {
 
 constexpr int kHomeMaxInnerWidth = 100;
 constexpr int kHomeBorderColumns = 2;
+constexpr int kHomeSidePadding = 1;
 constexpr float kMetadataEnd = 0.25F;
 constexpr float kTokenizationEnd = 0.90F;
 constexpr float kSaveEnd = 0.99F;
@@ -80,7 +81,8 @@ private:
 }  // namespace
 
 int homeFieldWidth(int terminalWidth) {
-    return std::max(1, std::min(kHomeMaxInnerWidth, terminalWidth - kHomeBorderColumns));
+    return std::max(1, std::min(kHomeMaxInnerWidth,
+                                terminalWidth - kHomeBorderColumns - 2 * kHomeSidePadding));
 }
 
 HomeGeometry homeGeometry(int terminalWidth, int terminalHeight, int inputHeight) {
