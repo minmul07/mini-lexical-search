@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <iosfwd>
 #include <optional>
 #include <string>
@@ -24,9 +25,13 @@ struct CommandFeedback {
     Display display = Display::Unchanged;
     std::optional<SearchPage> page;
     bool newSearch = false;
+    bool indexStarted = false;
     std::string query;
     std::string elapsed;
 };
+
+// TUI처럼 인덱싱을 호출자 스레드 밖에서 실행해야 하는 경우 사용한다.
+using IndexDispatcher = std::function<void(const std::string& directory)>;
 
 enum class Navigation { More, Next, Previous };
 // 버튼은 명령 문자열로 변환하지 않고 원래 경로를 그대로 전달한다.
@@ -36,7 +41,8 @@ void navigate(SearchApplication& application, Navigation navigation, const std::
 void printUsage(const char* program);
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
                       std::ostream& output, OutputMode mode = OutputMode::NoTui,
-                      CommandFeedback* feedback = nullptr);
+                      CommandFeedback* feedback = nullptr,
+                      const IndexDispatcher& indexDispatcher = {});
 int runRepl(const char* program, SearchApplication& application);
 
 }  // namespace mini_lexical_search::cli

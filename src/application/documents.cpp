@@ -9,9 +9,10 @@
 namespace mini_lexical_search {
 
 IndexWork prepareIndex(const std::filesystem::path& directory,
-                       const std::vector<Document>& previous) {
+                       const std::vector<Document>& previous,
+                       const DocumentProgress& progress) {
     IndexWork work;
-    work.documents = collectDocuments(directory);
+    work.documents = collectDocuments(directory, progress);
     std::unordered_map<std::string, const Document*> byPath;
     std::uint64_t nextId = 0;
     for (const auto& document : previous) {
@@ -54,9 +55,11 @@ IndexWork prepareIndex(const std::filesystem::path& directory,
 }
 
 IndexWork prepareIndex(const std::filesystem::path& directory,
-                       const std::filesystem::path& output) {
+                       const std::filesystem::path& output,
+                       const DocumentProgress& progress) {
     const bool exists = std::filesystem::exists(output);
-    auto work = prepareIndex(directory, exists ? loadDocuments(output) : std::vector<Document>{});
+    auto work = prepareIndex(directory, exists ? loadDocuments(output) : std::vector<Document>{},
+                             progress);
     work.changed = !exists || work.changed;
     return work;
 }
@@ -64,8 +67,10 @@ IndexWork prepareIndex(const std::filesystem::path& directory,
 TokenizeStats tokenizeDocuments(std::vector<Document>& documents,
                                 const std::vector<std::size_t>& selection,
                                 Tokenizer& tokenizer,
-                                const TokenSink& sink) {
+                                const TokenSink& sink,
+                                const DocumentProgress& progress) {
     TokenizeStats stats;
+    if (progress) progress(0, selection.size());
     for (const std::size_t index : selection) {
         Document& document = documents.at(index);
         std::uint64_t count = 0;
@@ -83,6 +88,7 @@ TokenizeStats tokenizeDocuments(std::vector<Document>& documents,
         document.tokenCount = static_cast<std::uint32_t>(count);
         ++stats.documents;
         stats.tokens += count;
+        if (progress) progress(stats.documents, selection.size());
     }
     return stats;
 }

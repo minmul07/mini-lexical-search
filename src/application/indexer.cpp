@@ -9,14 +9,15 @@ namespace mini_lexical_search {
 
 TokenizeStats applyIndexWork(IndexWork& work,
                              InvertedIndex& index,
-                             Tokenizer& tokenizer) {
+                             Tokenizer& tokenizer,
+                             const DocumentProgress& progress) {
     InvertedIndex pending;
     const TokenSink sink = [&pending](DocumentId documentId,
                                       std::uint32_t line,
                                       const std::string& token) {
         pending.add(token, documentId, line);
     };
-    const auto stats = tokenizeDocuments(work.documents, work.toTokenize, tokenizer, sink);
+    const auto stats = tokenizeDocuments(work.documents, work.toTokenize, tokenizer, sink, progress);
     for (const DocumentId documentId : work.removed) {
         index.removeDocument(documentId);
     }

@@ -14,7 +14,8 @@ struct IndexUpdate {
 // 먼저 임시 역색인에 토큰을 모으므로, 문서 읽기가 실패하면 `index`를 변경하지 않는다.
 TokenizeStats applyIndexWork(IndexWork& work,
                              InvertedIndex& index,
-                             Tokenizer& tokenizer);
+                             Tokenizer& tokenizer,
+                             const DocumentProgress& progress = {});
 
 // 새 루트·문서 테이블·역색인을 함께 저장한다.
 // 저장 실패 시 메모리 snapshot을 마지막 저장 상태로 복구하고 예외를 다시 던진다.

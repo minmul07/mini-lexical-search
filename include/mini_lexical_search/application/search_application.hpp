@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -14,20 +15,28 @@ namespace mini_lexical_search {
 
 enum class IndexStage {
     MetadataStarted,
+    MetadataProgress,
     MetadataCompleted,
     TokenizationStarted,
+    TokenizationProgress,
     TokenizationCompleted,
+    SaveStarted,
+    SaveCompleted,
 };
 
 struct IndexProgress {
     IndexStage stage;
-    // 완료 단계의 경과 시간이다. 시작 단계는 0이다.
+    // 완료 단계의 경과 시간이다. 시작·진행 단계는 0이다.
     std::int64_t elapsedMicroseconds = 0;
     IndexStats metadata;
     TokenizeStats tokens;
+    // MetadataProgress는 스캔한 파일 수, TokenizationProgress는 토큰화한 문서 수다.
+    std::size_t completed = 0;
+    std::size_t total = 0;
 };
 
-// 동기적으로 호출한다. 애플리케이션을 재호출하거나 동시에 접근하지 않는다.
+// 콜백은 index/rebuildIndex를 호출한 스레드에서 동기적으로 실행된다.
+// UI 스레드가 아닌 곳에서 호출하면 콜백에서 UI를 직접 수정하지 않는다.
 // 예외 발생 시 인덱싱을 중단하고, 재구축된 posting을 복구한 뒤 예외를 전달한다.
 using IndexProgressCallback = std::function<void(const IndexProgress&)>;
 
@@ -77,6 +86,10 @@ public:
     SearchPage previousPage();
     // ./ 등의 상대 경로 표현은 어휘적으로 정규화하여 현재 페이지에서 찾는다.
     SearchPage expandFile(const std::string& relativePath);
+
+    // 현재 페이지의 파일을 디스크에서 다시 읽는다. 검색 세션은 변경하지 않는다.
+    // 원본 줄 순서를 유지하며 파일 열기·읽기 실패 시 예외를 던진다.
+    std::vector<std::string> readFile(const std::string& relativePath) const;
 
     // 동기적으로 호출하며 콜백에서 앱을 재호출하거나 동시에 접근하지 않는다.
     // 원문을 캐시하지 않는 전체 출력. 콜백 예외는 호출자에게 전달한다.

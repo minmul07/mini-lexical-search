@@ -41,8 +41,7 @@ add_library(mini_lexical_search_application
     src/application/indexer.cpp
     src/application/log.cpp
     src/application/search_application.cpp
-    src/application/search_session.cpp
-    src/application/working_job.cpp)
+    src/application/search_session.cpp)
 target_link_libraries(mini_lexical_search_application
     PUBLIC mini_lexical_search_domain
     PRIVATE mini_lexical_search_infrastructure)
@@ -58,8 +57,12 @@ target_link_libraries(mini_lexical_search_cli
     PUBLIC mini_lexical_search_application)
 
 add_library(mini_lexical_search_tui
+    src/presentation/tui/clipboard.cpp
+    src/presentation/tui/home_title.cpp
+    src/presentation/tui/index_progress.cpp
     src/presentation/tui/input_layout.cpp
     src/presentation/tui/result_view.cpp
+    src/presentation/tui/viewer_view.cpp
     src/presentation/tui/tui.cpp)
 target_include_directories(mini_lexical_search_tui
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

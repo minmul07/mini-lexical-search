@@ -1,5 +1,4 @@
 #include "mini_lexical_search/application/search_application.hpp"
-#include "mini_lexical_search/application/working_job.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -43,14 +42,43 @@ void requireFailure(Action action, const std::string& message) {
     require(failed, message);
 }
 
+bool isMilestone(IndexStage stage) {
+    return stage == IndexStage::MetadataStarted || stage == IndexStage::MetadataCompleted ||
+           stage == IndexStage::TokenizationStarted || stage == IndexStage::TokenizationCompleted;
+}
+
+std::vector<IndexProgress> milestones(const std::vector<IndexProgress>& events) {
+    std::vector<IndexProgress> result;
+    for (const auto& event : events) {
+        if (isMilestone(event.stage)) result.push_back(event);
+    }
+    return result;
+}
+
+const IndexProgress* findStage(const std::vector<IndexProgress>& events, IndexStage stage) {
+    for (const auto& event : events) {
+        if (event.stage == stage) return &event;
+    }
+    return nullptr;
+}
+
+const IndexProgress* findLastStage(const std::vector<IndexProgress>& events, IndexStage stage) {
+    const IndexProgress* result = nullptr;
+    for (const auto& event : events) {
+        if (event.stage == stage) result = &event;
+    }
+    return result;
+}
+
 void requireStages(const std::vector<IndexProgress>& events) {
     const std::vector<IndexStage> expected{
         IndexStage::MetadataStarted, IndexStage::MetadataCompleted,
         IndexStage::TokenizationStarted, IndexStage::TokenizationCompleted};
-    require(events.size() == expected.size(), "wrong event count");
-    for (std::size_t i = 0; i < events.size(); ++i) {
-        require(events[i].stage == expected[i], "wrong event order");
-        require(events[i].elapsedMicroseconds >= 0, "negative elapsed time");
+    const auto actual = milestones(events);
+    require(actual.size() == expected.size(), "wrong milestone event count");
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        require(actual[i].stage == expected[i], "wrong event order");
+        require(actual[i].elapsedMicroseconds >= 0, "negative elapsed time");
     }
 }
 
@@ -62,17 +90,41 @@ void testSession(const fs::path& root) {
     write(documents / "b.txt", "beta\nalpha\n자료구조\n");
     SearchApplication app(snapshot);
     require(app.ready() && app.loadError().empty(), "missing snapshot must start ready");
-    require(workingJob().label() == "Ready", "missing snapshot must be ready");
     require(app.snapshotPath() == snapshot && search(app, "alpha").empty(), "empty session failed");
 
     std::vector<IndexProgress> events;
     auto collect = [&](const IndexProgress& event) { events.push_back(event); };
     const auto update = app.index(documents, collect);
     requireStages(events);
-    require(workingJob().label() == "Ready", "successful indexing must be ready");
     require(update.metadata.added == 2 && update.tokens.documents == 2 && update.tokens.tokens == 9,
             "wrong indexing counters");
-    require(events[1].metadata.added == 2 && events[3].tokens.tokens == 9, "event counters missing");
+    const auto* metadataCompleted = findStage(events, IndexStage::MetadataCompleted);
+    const auto* tokenizationCompleted = findStage(events, IndexStage::TokenizationCompleted);
+    require(metadataCompleted && tokenizationCompleted &&
+                metadataCompleted->metadata.added == 2 && tokenizationCompleted->tokens.tokens == 9,
+            "event counters missing");
+    const auto* metadataEnd = findLastStage(events, IndexStage::MetadataProgress);
+    require(metadataEnd && metadataEnd->completed == 2 && metadataEnd->total == 2,
+            "metadata progress missing");
+    const auto* tokenEnd = findLastStage(events, IndexStage::TokenizationProgress);
+    require(tokenEnd && tokenEnd->completed == 2 && tokenEnd->total == 2 &&
+                findStage(events, IndexStage::SaveStarted) &&
+                findStage(events, IndexStage::SaveCompleted),
+            "tokenization/save progress missing");
+    std::size_t previousMetadata = 0;
+    std::size_t previousTokens = 0;
+    for (const auto& event : events) {
+        if (event.stage == IndexStage::MetadataProgress) {
+            require(event.completed >= previousMetadata && event.completed <= event.total,
+                    "metadata progress is not monotonic");
+            previousMetadata = event.completed;
+        }
+        if (event.stage == IndexStage::TokenizationProgress) {
+            require(event.completed >= previousTokens && event.completed <= event.total,
+                    "tokenization progress is not monotonic");
+            previousTokens = event.completed;
+        }
+    }
 
     const auto results = search(app, "ALPHA");
     require(results.size() == 2 && results[0].document.id < results[1].document.id,
@@ -97,8 +149,11 @@ void testSession(const fs::path& root) {
     events.clear();
     const auto unchanged = reopened.index(documents, collect);
     requireStages(events);
+    const auto* unchangedTokenization = findStage(events, IndexStage::TokenizationCompleted);
     require(unchanged.metadata.notUpdated == 2 && unchanged.tokens.documents == 0 &&
-            events[3].elapsedMicroseconds == 0, "unchanged indexing failed");
+                unchangedTokenization && unchangedTokenization->elapsedMicroseconds == 0,
+            "unchanged indexing failed");
+    require(!findStage(events, IndexStage::SaveStarted), "unchanged indexing saved a snapshot");
     require(read(snapshot) == saved && fs::last_write_time(snapshot) == modified,
             "unchanged indexing rewrote snapshot");
 
@@ -117,7 +172,10 @@ void testSession(const fs::path& root) {
             if (event.stage == IndexStage::MetadataCompleted) fs::remove(transient);
         });
     }, "missing tokenization input accepted");
-    require(events.size() == 3 && events.back().stage == IndexStage::TokenizationStarted,
+    const auto failedMilestones = milestones(events);
+    require(failedMilestones.size() == 3 &&
+                failedMilestones.back().stage == IndexStage::TokenizationStarted &&
+                !findStage(events, IndexStage::TokenizationCompleted),
             "failed tokenization emitted completion");
     require(read(snapshot) == saved && search(reopened, "alpha").size() == 2,
             "tokenization failure changed session");
@@ -130,6 +188,15 @@ void testSession(const fs::path& root) {
     require(read(snapshot) == saved && search(reopened, "alpha")[0].totalMatchingLines == 2 &&
             search(reopened, "replacement").empty(), "save failure did not restore postings");
     fs::remove(snapshot.string() + ".tmp");
+
+    // A save-stage observer exception must restore postings that were already merged.
+    requireFailure([&] {
+        reopened.index(documents, [](const IndexProgress& event) {
+            if (event.stage == IndexStage::SaveStarted) throw std::runtime_error("save observer");
+        });
+    }, "save observer exception swallowed");
+    require(read(snapshot) == saved && search(reopened, "replacement").empty(),
+            "save observer failure changed session");
 
     // A UI observer exception after rebuilding also restores the saved index.
     requireFailure([&] {
@@ -163,7 +230,6 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     write(corrupt, "not a binary index");
     SearchApplication broken(corrupt);
     require(!broken.ready() && !broken.loadError().empty(), "corrupt snapshot accepted");
-    require(workingJob().label() == "Failed to load index", "corrupt snapshot must fail the job");
     requireFailure([&] { search(broken, "alpha"); }, "search on corrupt session accepted");
     std::vector<IndexProgress> events;
     requireFailure([&] { broken.index(root, [&](const IndexProgress& e) { events.push_back(e); }); },
@@ -176,12 +242,11 @@ void testCorruptionAndFirstSave(const fs::path& root) {
     write(documents / "a.txt", "alpha\n");
     fs::create_directory(corrupt.string() + ".tmp");
     requireFailure([&] { broken.rebuildIndex(documents); }, "blocked rebuild accepted");
-    require(!broken.ready() && workingJob().label() == "Failed to load index",
-            "failed rebuild became ready");
+    require(!broken.ready(), "failed rebuild became ready");
     require(read(corrupt) == "not a binary index", "failed rebuild overwrote the snapshot");
     fs::remove(corrupt.string() + ".tmp");
     const auto rebuilt = broken.rebuildIndex(documents);
-    require(broken.ready() && workingJob().label() == "Ready" && rebuilt.metadata.added == 1 &&
+    require(broken.ready() && rebuilt.metadata.added == 1 &&
                 search(broken, "alpha").size() == 1,
             "rebuild did not replace the damaged snapshot");
     require(read(corrupt) != "not a binary index", "rebuild kept the damaged text");
@@ -319,6 +384,32 @@ void testPageBoundaries(const fs::path& root) {
     }
 }
 
+void testViewerRead(const fs::path& root) {
+    const auto docs = root / "docs";
+    fs::create_directories(docs);
+    const auto path = docs / " leading file .txt";
+    write(path, "alpha\n\nnot a match\nALPHA\n");
+    SearchApplication app(root / "index.bin");
+    app.index(docs);
+    requireFailure([&] { app.readFile(" leading file .txt"); }, "read without session accepted");
+    const auto page = app.search("alpha");
+    const auto content = app.readFile("./ leading file .txt");
+    require(content == std::vector<std::string>({"alpha", "", "not a match", "ALPHA"}),
+            "viewer must read all original lines, preserving blanks and spaces in paths");
+    requireFailure([&] { app.readFile("../outside.txt"); }, "non-page path accepted");
+    write(path, "new content without final newline");
+    require(app.readFile(" leading file .txt") == std::vector<std::string>({"new content without final newline"}),
+            "viewer must read fresh disk content");
+    fs::remove(path);
+    requireFailure([&] { app.readFile(" leading file .txt"); }, "deleted file read accepted");
+    const auto preserved = app.currentPage();
+    require(preserved.number == page.number && preserved.files[0].lines.size() == page.files[0].lines.size() &&
+            preserved.files[0].lines[0].text == "alpha" && preserved.files[0].warning.empty(),
+            "viewer reads or failures modified search session");
+    write(path, "");
+    require(app.readFile(" leading file .txt").empty(), "empty file must return no lines");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -331,6 +422,7 @@ int main(int argc, char** argv) {
         testBrowsing(root / "browsing");
         testPages(root / "pages");
         testPageBoundaries(root / "boundaries");
+        testViewerRead(root / "viewer");
         testCorruptionAndFirstSave(root / "failures");
         fs::remove_all(root);
     } catch (const std::exception& error) {

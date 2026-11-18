@@ -9,6 +9,7 @@ namespace mini_lexical_search::tui {
 struct Fragment {
     std::string text;
     bool highlighted = false;
+    bool selected = false;
 };
 using PreviewRow = std::vector<Fragment>;
 // 제어 문자는 공백으로 치환하며 원문의 토큰 경계로 강조한다.
@@ -47,12 +48,13 @@ public:
     bool resultsFocused = false;
 
     void home();
-    void showResults(SearchPage result, const std::string& executedQuery, const std::string& time);
+    void showResults(SearchPage result, const std::string& executedQuery, const std::string& time,
+                     int scrollOffset = 0);
     void showText(std::string message, const std::string& executedQuery = {});
     void layout(int width, int height);
     void move(int delta);
-    void select(int index);
-    void select(const ItemKey& key);
+    void select(int index, bool revealSelection = true);
+    void select(const ItemKey& key, bool revealSelection = true);
     void scroll(int rows);
     const ResultItem* selection() const;
     const std::vector<ResultItem>& items() const { return items_; }

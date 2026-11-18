@@ -57,6 +57,12 @@ void writeIndexProgress(std::ostream& output, const IndexProgress& event) {
         output << "tokenized " << event.tokens.documents << " documents ("
                << formatElapsedMilliseconds(event.elapsedMicroseconds) << " ms)\n";
         break;
+    case IndexStage::MetadataProgress:
+    case IndexStage::TokenizationProgress:
+    case IndexStage::SaveStarted:
+    case IndexStage::SaveCompleted:
+        // CLI는 기존 단계 요약만 출력하고, 세부 진행은 TUI가 표시한다.
+        break;
     }
 }
 
@@ -134,7 +140,8 @@ void navigate(SearchApplication& application, Navigation navigation, const std::
 }
 
 LineAction handleLine(const char* program, SearchApplication& application, std::string_view line,
-                      std::ostream& output, OutputMode mode, CommandFeedback* feedback) {
+                      std::ostream& output, OutputMode mode, CommandFeedback* feedback,
+                      const IndexDispatcher& indexDispatcher) {
     if (feedback) *feedback = {};
     const auto first = line.find_first_not_of(" \t\r\n\v\f");
     if (first == std::string_view::npos) {
@@ -160,8 +167,16 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                    << application.snapshotPath().string() << "\n";
             return LineAction::Ran;
         }
+        const auto directory = arguments.empty() ? "./documents" : arguments;
+        if (indexDispatcher) {
+            indexDispatcher(directory);
+            if (feedback) {
+                feedback->display = Display::Unchanged;
+                feedback->indexStarted = true;
+            }
+            return LineAction::Ran;
+        }
         try {
-            const auto directory = arguments.empty() ? "./documents" : arguments;
             application.index(directory, [&output](const IndexProgress& event) {
                 writeIndexProgress(output, event);
             });

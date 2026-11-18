@@ -17,6 +17,11 @@ std::string joined(const std::vector<PreviewRow>& rows, bool highlightedOnly = f
         if (!highlightedOnly || part.highlighted) text += part.text;
     return text;
 }
+std::string rowText(const DisplayRow& row) {
+    std::string text;
+    for (const auto& part : row.fragments) text += part.text;
+    return text;
+}
 void dimensions(const std::vector<PreviewRow>& rows, int width, int limit = 3) {
     require(!rows.empty() && static_cast<int>(rows.size()) <= limit, "preview height exceeds limit");
     for (const auto& row : rows) {
@@ -99,6 +104,26 @@ int main() {
         view.layout(50, 10);
         view.select({ItemKind::Line, " leading.txt", 42});
         require(view.selection()->key.line == 42 && view.offset() > 0, "newly expanded row can be revealed by stable key");
+
+        ResultView expansion;
+        expansion.showResults(page(), "alpha", "0.1");
+        expansion.layout(50, 10);
+        expansion.select({ItemKind::More, " leading.txt", 0});
+        const int viewport = expansion.offset();
+        require(viewport > 0, "more button must scroll into view");
+        const std::string topBefore = rowText(expansion.rows()[viewport]);
+        auto withNewLine = page();
+        withNewLine.files[0].lines.push_back({42, "alpha newly expanded"});
+        expansion.showResults(withNewLine, expansion.query, expansion.elapsed, viewport);
+        expansion.layout(50, 10);
+        expansion.select({ItemKind::Line, " leading.txt", 42}, false);
+        require(expansion.offset() == viewport, "more expansion must keep the viewport");
+        require(rowText(expansion.rows()[viewport]) == topBefore, "rows above more must not move");
+        require(expansion.selection()->key == (ItemKey{ItemKind::Line, " leading.txt", 42}),
+                "first expanded row must be selected");
+        expansion.showResults(page(), "alpha", "0.1");
+        expansion.layout(50, 10);
+        require(expansion.offset() == 0, "new results must start at the top");
         for (int width = 1; width <= 30; ++width) {
             view.layout(width, 4);
             for (const auto& row : view.rows()) {
