@@ -136,10 +136,10 @@ void testSession(const fs::path& root) {
             "matching line values failed");
     require(results[0].document.tokenCount == 6 && !results[0].document.hash.empty(),
             "document information missing");
-    require(search(app, "자료구조 AND 알고리즘").size() == 1, "AND search failed");
-    require(search(app, "자료구조 OR 알고리즘").size() == 2, "OR search failed");
+    require(search(app, "자료구조 & 알고리즘").size() == 1, "AND search failed");
+    require(search(app, "자료구조 알고리즘").size() == 2, "OR search failed");
     require(search(app, "absent").empty(), "nonmatching query failed");
-    requireFailure([&] { search(app, "alpha beta"); }, "invalid query accepted");
+    requireFailure([&] { search(app, "alpha & beta gamma"); }, "invalid query accepted");
     require(search(app, "alpha").size() == 2, "query failure broke session");
 
     const auto saved = read(snapshot);
@@ -216,7 +216,7 @@ void testSession(const fs::path& root) {
     fs::remove(documents / "a.md");
     const auto beforeSearch = read(snapshot);
     const auto beforeTime = fs::last_write_time(snapshot);
-    const auto warnings = search(reopened, "replacement OR beta");
+    const auto warnings = search(reopened, "replacement beta");
     require(warnings.size() == 2 && !warnings[0].warning.empty() && warnings[0].lines.empty() &&
             warnings[0].totalMatchingLines == 1 && warnings[1].warning.empty() &&
             warnings[1].lines.size() == 1, "document warning discarded later results");
@@ -271,14 +271,14 @@ void testBrowsing(const fs::path& root) {
     write(docs / "z-dir/한글 폴더/b.md", "hit\n");
     SearchApplication app(root / "index.bin");
     app.index(docs);
-    const auto page = app.search("hit OR beta");
+    const auto page = app.search("hit beta");
     require(page.files.size() == 3 && page.files[0].relativePath == "z-dir/한글 폴더/b.md" &&
             page.files[1].relativePath == "z-dir/a.txt" && page.files[2].relativePath == "a-root.txt",
             "directory-first traversal failed");
     require(page.files[2].totalMatchingLines == 1 && page.files[1].lines[1].number == 3,
             "row union/dedup failed");
-    require(app.search("hit AND beta").files.size() == 2, "document-level AND changed");
-    require(app.search("hit OR hit").files.size() == 3, "repeated OR changed matches");
+    require(app.search("hit & beta").files.size() == 2, "document-level AND changed");
+    require(app.search("hit hit").files.size() == 3, "repeated OR changed matches");
     write(docs / "z-dir/0-new.txt", "hit\n");
     fs::rename(docs / "a-root.txt", docs / "b-root.txt");
     app.index(docs);
@@ -319,7 +319,7 @@ void testPages(const fs::path& root) {
     }
     SearchApplication app(root / "index.bin");
     app.index(docs);
-    auto first = app.search("hit AND beta");
+    auto first = app.search("hit & beta");
     require(first.number == 1 && !first.hasPrevious && first.hasNext && first.files.size() == 6,
             "soft page boundary failed");
     std::size_t displayed = 0;
@@ -352,14 +352,14 @@ void testPages(const fs::path& root) {
     write(docs / "1 file.txt", hits(11));
     require(app.expandFile("1 file.txt").files[1].lines.size() == 10, "failed file was retried in session");
     require(app.search("hit").files[1].warning.empty(), "new query did not retry failed file");
-    requireFailure([&] { app.search("hit OR"); }, "bad query accepted");
+    requireFailure([&] { app.search("hit &"); }, "bad query accepted");
     requireFailure([&] { app.currentPage(); }, "bad query retained old session");
     app.search("hit");
     requireFailure([&] { app.index(root / "missing"); }, "missing directory accepted");
     requireFailure([&] { app.nextPage(); }, "failed indexing retained session");
 
     std::size_t streamed = 0, groups = 0;
-    app.visitAllResults("hit OR beta", [&](const SearchResult&) { ++groups; },
+    app.visitAllResults("hit beta", [&](const SearchResult&) { ++groups; },
         [&](const MatchingLine&) { ++streamed; }, [](const std::string&) {});
     require(groups == 7 && streamed == 151, "unlimited stream truncated results");
 }

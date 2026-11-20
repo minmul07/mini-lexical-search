@@ -32,31 +32,38 @@ int main() {
         const auto single = search("ALPHA!");
         require(single.size() == 2 && single[0].documentId == 2 && single[0].score == 3);
         require(single[0].matchedLines == std::vector<std::uint32_t>({1, 4}));
-        const auto both = search("alpha AND beta");
+        const auto both = search("alpha & beta");
         require(both.size() == 1 && both[0].score == 5);
         require(both[0].matchedLines == std::vector<std::uint32_t>({1, 4, 8}));
-        const auto either = search("alpha OR beta");
+        const auto either = search("alpha beta");
         require(either.size() == 3 && either[0].score == 5 &&
                 either[1].documentId == 7 && either[2].documentId == 9);
-        require(search("alpha AND beta AND gamma")[0].score == 6);
-        require(search("missing OR alpha OR beta OR gamma")[0].score == 6);
-        require(search("alpha AND ALPHA")[0].score == 3);
-        require(search("alpha OR ALPHA")[0].score == 3);
-        require(search("alpha AND missing").empty());
-        require(search("missing AND alpha").empty());
-        require(search("alpha OR missing").size() == 2);
+        require(search("alpha & beta & gamma")[0].score == 6);
+        require(search("missing alpha beta gamma")[0].score == 6);
+        require(search("alpha & ALPHA")[0].score == 3);
+        require(search("alpha ALPHA")[0].score == 3);
+        require(search("alpha&beta")[0].score == 5);
+        require(search("alpha &beta")[0].score == 5);
+        require(search("alpha& beta")[0].score == 5);
+        require(search("alpha  beta").size() == 3);
+        require(search("alpha & missing").empty());
+        require(search("missing & alpha").empty());
+        require(search("alpha missing").size() == 2);
         index.add("delta", 80, 1);
-        require(search("alpha AND delta").empty());
+        require(search("alpha & delta").empty());
         index.removeDocument(80);
-        require(search("missing OR absent").empty());
+        require(search("missing absent").empty());
         require(search("missing").empty());
         index.add("and", 42, 1);
         require(search("and")[0].documentId == 42);
+        // AND/OR are ordinary keywords; they no longer act as operators.
+        require(search("alpha AND beta").size() == 4);
+        require(search("alpha OR beta").size() == 3);
         index.removeDocument(42);
         require(QueryProcessor{}.process(parseQuery("alpha", tokenizer), InvertedIndex{}).empty());
-        for (const auto& invalid : {"", "  ", "!!!", "AND", "AND alpha", "alpha OR", "alpha beta",
-                                    "alpha AND OR beta", "alpha AND beta OR gamma", "(alpha)",
-                                    "\"alpha\"", "alpha-beta", "alpha and beta"}) {
+        for (const auto& invalid : {"", "  ", "!!!", "&", "& alpha", "alpha &", "alpha && beta",
+                                    "alpha & beta gamma", "alpha beta & gamma", "(alpha)",
+                                    "\"alpha\"", "alpha-beta", "alpha & beta &"}) {
             bool failed = false;
             try { parseQuery(invalid, tokenizer); }
             catch (const std::invalid_argument&) { failed = true; }
@@ -74,7 +81,7 @@ int main() {
         require(index.termCount() == before.size());
         index.add("자료구조", 50, 1);
         index.add("알고리즘", 50, 3);
-        require(search("자료구조 AND 알고리즘")[0].matchedLines ==
+        require(search("자료구조 & 알고리즘")[0].matchedLines ==
                 std::vector<std::uint32_t>({1, 3}));
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

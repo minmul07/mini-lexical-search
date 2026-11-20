@@ -108,7 +108,7 @@ void writeUsage(std::ostream& output, const char* program, OutputMode mode = Out
         << "  --no-tui       TUI 없이 CLI로 실행\n\n"
         << "대화형 명령:\n"
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
-        << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, AND 또는 OR)\n"
+        << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, 공백 OR·& AND)\n"
         << (mode == OutputMode::Tui
                 ? "  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 더보기·이전·다음 버튼 실행\n  마우스 클릭        더보기·이전·다음 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            프로그램 종료\n"
                 : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
@@ -238,7 +238,7 @@ LineAction handleLine(const char* program, SearchApplication& application, std::
                           std::to_string(fileCount) + summaries.str());
             } catch (const std::exception& error) {
                 output << "error: search failed: " << error.what()
-                       << "\nUsage: <keyword> [AND <keyword> ... | OR <keyword> ...]\n";
+                       << "\nUsage: <keyword> [<keyword> ...] or <keyword> [& <keyword> ...]\n";
             }
         }
         return LineAction::Ran;

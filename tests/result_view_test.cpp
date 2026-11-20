@@ -75,7 +75,7 @@ int main() {
 
         ResultView view;
         require(view.mode == ViewMode::Home, "initial screen is home");
-        view.showResults(page(), "alpha AND beta", "0.1");
+        view.showResults(page(), "alpha & beta", "0.1");
         view.layout(50, 18);
         require(view.items().size() == 13, "ten lines, more, second file line and next are selectable");
         require(view.items()[10].key.kind == ItemKind::More, "more follows file rows");

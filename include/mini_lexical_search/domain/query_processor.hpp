@@ -18,8 +18,9 @@ struct SearchCandidate {
     std::vector<std::uint32_t> matchedLines;
 };
 
-// 독립된 대문자 AND/OR를 연산자로 인식한다. 연산자 혼합, 암묵적 연산자,
-// 괄호와 따옴표는 지원하지 않는다. 오류 시 invalid_argument 예외를 던진다.
+// 공백으로 구분된 키워드는 OR, '&'로 구분된 키워드는 AND로 해석한다.
+// 한 질의에서 두 구분자를 섞거나 괄호·따옴표를 쓰면 invalid_argument를 던진다.
+// AND/OR는 연산자가 아니므로 일반 키워드로 검색된다.
 ParsedQuery parseQuery(const std::string& text, Tokenizer& tokenizer);
 
 class QueryProcessor {

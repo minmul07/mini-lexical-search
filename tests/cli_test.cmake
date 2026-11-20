@@ -47,10 +47,10 @@ if(NOT startup_log MATCHES "index load succeeded [(][0-9]+[.][0-9][0-9][0-9] ms[
     message(FATAL_ERROR "startup log missing a successful index load time: ${startup_log}")
 endif()
 
-check_cli(commands "\n  \t\n /index \n자료구조 알고리즘\n/help\n/search\n/index extra\n/exit extra\n/indexing\n/searching query\nsearch query\n/unknown\n/index\n/exit\n/unknown_after_exit\n"
+check_cli(commands "\n  \t\n /index \n자료구조 & 알고리즘 absent\n/help\n/search\n/index extra\n/exit extra\n/indexing\n/searching query\nsearch & query absent\n/unknown\n/index\n/exit\n/unknown_after_exit\n"
     0 "error: indexing failed:" start --no-tui)
 foreach(expected
-        "expected AND or OR between keywords" "사용법:" "파일별 검색" "Usage: <keyword>"
+        "mixed '&' and whitespace-separated OR" "사용법:" "파일별 검색" "Usage: <keyword>"
         "not a directory: extra" "unexpected arguments for /exit"
         "Unknown command: /indexing" "Unknown command: /searching query"
         "Unknown command: /search" "Unknown command: /unknown")
@@ -159,7 +159,7 @@ file(SHA256 "${fixture}/.data/index.bin" search_snapshot)
 file(TIMESTAMP "${fixture}/.data/index.bin" search_timestamp "%s")
 # Nonmatching files need not be available to search.
 file(REMOVE "${fixture}/search_docs/c.txt")
-check_cli(search_reload "alpha OR beta\nalpha AND beta AND gamma\nabsent\nalpha OR\n/help\n/exit\n" 0 "6: alpha gamma" start --no-tui)
+check_cli(search_reload "alpha beta\nalpha & beta & gamma\nabsent\nalpha &\n/help\n/exit\n" 0 "6: alpha gamma" start --no-tui)
 foreach(expected "a.txt" "b.md" "[a.txt] 5" "[b.md] 1" "3: alpha beta" "No matches." "ends with an operator" "사용법:" "파일별 검색")
     string(FIND "${last_output}" "${expected}" found)
     if(found EQUAL -1)
@@ -170,13 +170,13 @@ if(NOT last_output MATCHES "searched [(][0-9]+[.][0-9][0-9][0-9] ms[)]\nNo match
     message(FATAL_ERROR "search_reload: missing search elapsed milliseconds before no matches: ${last_output}")
 endif()
 file(READ "${fixture}/.data/log.log" search_log)
-if(NOT search_log MATCHES "search alpha OR beta [(][0-9]+[.][0-9][0-9][0-9] ms[)] results=2 1 id=[0-9]+ matchingLines=5 2 id=[0-9]+ matchingLines=1\n")
+if(NOT search_log MATCHES "search alpha beta [(][0-9]+[.][0-9][0-9][0-9] ms[)] results=2 1 id=[0-9]+ matchingLines=5 2 id=[0-9]+ matchingLines=1\n")
     message(FATAL_ERROR "search_reload: log must retain both result summaries through matchingLines: ${search_log}")
 endif()
 if(NOT search_log MATCHES "search absent [(][0-9]+[.][0-9][0-9][0-9] ms[)] results=0\n")
     message(FATAL_ERROR "search_reload: log missing empty result summary: ${search_log}")
 endif()
-string(FIND "${search_log}" "search alpha OR (" failed_search_log)
+string(FIND "${search_log}" "search alpha & (" failed_search_log)
 if(NOT failed_search_log EQUAL -1)
     message(FATAL_ERROR "search_reload: query error must not append a search log: ${search_log}")
 endif()
@@ -195,7 +195,7 @@ if(NOT search_snapshot STREQUAL after_search OR NOT search_timestamp STREQUAL af
     message(FATAL_ERROR "search changed the snapshot")
 endif()
 file(REMOVE "${fixture}/search_docs/a.txt")
-check_cli(search_missing "alpha OR beta\n/help\n/exit\n" 0 "warning: cannot open" start --no-tui)
+check_cli(search_missing "alpha beta\n/help\n/exit\n" 0 "warning: cannot open" start --no-tui)
 string(FIND "${last_output}" "beta beta beta" found)
 if(found EQUAL -1)
     message(FATAL_ERROR "search did not continue after file failure")

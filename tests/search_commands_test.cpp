@@ -88,17 +88,17 @@ int main(int argc, char** argv) {
         require(navigate(cli::Navigation::Previous).find("21: hit 자료구조\n") != std::string::npos,
                 "ignored input or unknown command cleared the session");
         for (const auto mode : {cli::OutputMode::Tui, cli::OutputMode::NoTui}) {
-            for (const auto* query : {"자료구조", "hit AND 자료구조", "hit OR absent"}) {
+            for (const auto* query : {"자료구조", "hit & 자료구조", "hit absent"}) {
                 output = run(query, mode);
                 require(output.find("1: hit 자료구조\n") != std::string::npos,
                         "plain keyword or boolean query failed");
                 require((output.find("[4 space.txt]") != std::string::npos) ==
-                        (std::string(query) == "hit OR absent"), "boolean query used only part of the input");
+                        (std::string(query) == "hit absent"), "boolean query used only part of the input");
             }
             require(run(" \thit\t ", mode).find("[4 space.txt]") != std::string::npos,
                     "surrounding whitespace changed the query");
-            output = run("hit 자료구조", mode);
-            require(output.find("expected AND or OR") != std::string::npos &&
+            output = run("hit & 자료구조 absent", mode);
+            require(output.find("mixed '&' and whitespace-separated OR") != std::string::npos &&
                     output.find("Usage: <keyword>") != std::string::npos &&
                     output.find("/search") == std::string::npos, "invalid query guidance incorrect");
             for (const auto* keyword : {"search", "index", "help", "more", "next", "prev"}) {
@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
                         "keyword mistaken for a command");
             }
         }
-        run("hit 자료구조");
+        run("hit & 자료구조 absent");
         require(navigate(cli::Navigation::Previous).find("no active search") != std::string::npos,
                 "invalid search retained session");
         output = run("hit", cli::OutputMode::NoTui);
@@ -159,8 +159,8 @@ int main(int argc, char** argv) {
         require(feedback.display == cli::Display::Text && !feedback.page, "home retained pageable results");
         cli::handleLine("test", app, "hit", stream, cli::OutputMode::Tui, &feedback);
         require(feedback.page && feedback.page->files[0].lines.size() == 10, "search after home retained expansion");
-        cli::handleLine("test", app, "hit 자료구조", stream, cli::OutputMode::Tui, &feedback);
-        require(feedback.newSearch && feedback.query == "hit 자료구조" &&
+        cli::handleLine("test", app, "hit & 자료구조 absent", stream, cli::OutputMode::Tui, &feedback);
+        require(feedback.newSearch && feedback.query == "hit & 자료구조 absent" &&
                 feedback.display == cli::Display::Text && !feedback.page, "failed search feedback incomplete");
         fs::remove_all(root);
     } catch (const std::exception& error) {
