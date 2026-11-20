@@ -110,7 +110,7 @@ void writeUsage(std::ostream& output, const char* program, OutputMode mode = Out
         << "  /index [디렉터리]  메타데이터·토큰화·역색인 저장 (기본: ./documents)\n"
         << "  <검색어>           / 없이 입력하여 파일별 검색 (디렉터리·이름순, 공백 OR·& AND)\n"
         << (mode == OutputMode::Tui
-                ? "  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 더보기·이전·다음 버튼 실행\n  마우스 클릭        더보기·이전·다음 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            프로그램 종료\n"
+                ? "  ↑↓ 방향키          검색창·결과 이동 및 선택\n  Space / Enter     선택한 더보기·이전·다음 버튼 실행\n  마우스 클릭        더보기·이전·다음 버튼 실행\n  PgUp / PgDn / 휠   결과 스크롤\n  Esc               홈으로 복귀 (종료하지 않음)\n  Ctrl+C            홈: 2초 내 2회 종료, 결과·뷰어: 뒤로가기, 그 외: 종료\n"
                 : "  --no-tui 검색은 모든 파일·매칭 행을 출력합니다.\n")
         << "  /help              도움말 출력\n"
         << "  /exit | /quit      프로그램 종료\n";

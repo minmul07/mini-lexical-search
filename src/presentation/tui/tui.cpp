@@ -27,6 +27,7 @@ constexpr int kBorderColumns = 2;
 constexpr int kInputPadding = 1;
 constexpr auto kMoreRevealDuration = std::chrono::milliseconds(200);
 constexpr auto kDoubleClickInterval = std::chrono::milliseconds(700);
+constexpr auto kExitConfirmDuration = std::chrono::seconds(2);
 constexpr auto kCopyNoticeSlideDuration = std::chrono::milliseconds(300);
 constexpr auto kCopyNoticeHoldDuration = std::chrono::seconds(3);
 using Clock = std::chrono::steady_clock;
@@ -180,6 +181,7 @@ void run(const char* program, SearchApplication& application) {
     Clock::time_point fillFadeStarted{};
     Clock::time_point lastFrame = Clock::now();
     Clock::time_point copyNoticeStarted{};
+    Clock::time_point exitConfirmStarted{};
     constexpr auto kFillFadeDuration = std::chrono::milliseconds(750);
     MoreReveal moreReveal;
     IndexProgressModel indexModel;
@@ -202,6 +204,7 @@ void run(const char* program, SearchApplication& application) {
         if (indexRunning) return;
         indexRunning = true;
         exitWhenIndexed = false;
+        exitConfirmStarted = {};
         fillFinishing = false;
         fillFading = false;
         fill = 0.0F;
@@ -307,6 +310,7 @@ void run(const char* program, SearchApplication& application) {
     });
     auto applyFeedback = [&](cli::CommandFeedback& feedback, const std::string& text,
                              int scrollOffset = 0) {
+        exitConfirmStarted = {};
         moreReveal.active = false;
         lastClickKey.reset();
         if (!indexRunning) indexModel.clear();
@@ -529,14 +533,22 @@ void run(const char* program, SearchApplication& application) {
                      ftxui::reflect(inputBox);
         if (view.mode == ViewMode::Home) {
             hits.clear();
+            std::vector<std::string> detailLines = indexDisplay.lines;
+            const bool exitConfirmVisible =
+                exitConfirmStarted != Clock::time_point{} &&
+                now - exitConfirmStarted <= kExitConfirmDuration;
+            if (exitConfirmVisible) {
+                detailLines.push_back("press ctrl-c again to exit");
+                ftxui::animation::RequestAnimationFrame();
+            }
             ftxui::Elements details;
-            if (homeLayout.detailHeight > 0 && !indexDisplay.lines.empty()) {
+            if (homeLayout.detailHeight > 0 && !detailLines.empty()) {
                 const int count = std::min(homeLayout.detailHeight,
-                                           static_cast<int>(indexDisplay.lines.size()));
-                const int start = static_cast<int>(indexDisplay.lines.size()) - count;
+                                           static_cast<int>(detailLines.size()));
+                const int start = static_cast<int>(detailLines.size()) - count;
                 for (int i = 0; i < count; ++i) {
                     details.push_back(ftxui::text(
-                        clipped(indexDisplay.lines[static_cast<std::size_t>(start + i)],
+                        clipped(detailLines[static_cast<std::size_t>(start + i)],
                                 homeLayout.fieldWidth)));
                 }
             }
@@ -683,12 +695,32 @@ void run(const char* program, SearchApplication& application) {
         }
         if (moreReveal.active && interruptsReveal) moreReveal.active = false;
         if (event == ftxui::Event::CtrlC) {
-            if (indexRunning) {
-                exitWhenIndexed = true;
+            const auto now = Clock::now();
+            // 결과·뷰어에서는 Esc와 같은 뒤로가기로 처리한다.
+            if (viewer || view.mode == ViewMode::Results) {
+                event = ftxui::Event::Escape;
+            } else if (view.mode == ViewMode::Home) {
+                // 홈에서는 2초 안에 두 번 눌러야 종료한다.
+                if (exitConfirmStarted != Clock::time_point{} &&
+                    now - exitConfirmStarted <= kExitConfirmDuration) {
+                    exitConfirmStarted = {};
+                    if (indexRunning) {
+                        exitWhenIndexed = true;
+                    } else {
+                        screen.Exit();
+                    }
+                    return true;
+                }
+                exitConfirmStarted = now;
+                return true;
             } else {
-                screen.Exit();
+                if (indexRunning) {
+                    exitWhenIndexed = true;
+                } else {
+                    screen.Exit();
+                }
+                return true;
             }
-            return true;
         }
         geometry();
         if (viewer) {
