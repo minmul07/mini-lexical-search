@@ -18,12 +18,20 @@ std::int64_t elapsedMicroseconds(Clock::time_point start) {
     return std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start).count();
 }
 
-void logIndexUpdated(std::int64_t metadataUs, std::int64_t tokenizeUs, const IndexStats& stats) {
+void logIndexResult(std::int64_t metadataUs, std::int64_t tokenizeUs,
+                    const IndexStats& stats, bool initialized) {
     std::ostringstream line;
     line << "index metadata (" << formatElapsedMilliseconds(metadataUs)
          << " ms) tokenization (" << formatElapsedMilliseconds(tokenizeUs) << " ms) "
          << stats.notUpdated << " not updated, " << stats.updated << " updated, " << stats.added
          << " added, " << stats.deleted << " deleted";
+    if (initialized) {
+        line << " INDEX_INITIALIZED";
+    } else if (stats.added || stats.updated || stats.deleted) {
+        line << " INDEX_UPDATED";
+    } else {
+        line << " INDEX_NOT_UPDATED";
+    }
     appendLog(line.str());
 }
 
@@ -69,6 +77,8 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
             });
         const auto tokenizeUs = work.toTokenize.empty() ? 0 : elapsedMicroseconds(tokenizeStarted);
         const auto root = std::filesystem::absolute(directory).lexically_normal();
+        const bool initialized = snapshot_.root.empty() ||
+                                 (snapshot_.documents.empty() && work.stats.added > 0);
         const bool save = work.changed || root != snapshot_.root;
         try {
             notify({IndexStage::TokenizationCompleted, tokenizeUs, {}, tokens, 0, 0});
@@ -88,7 +98,7 @@ IndexUpdate SearchApplication::index(const std::filesystem::path& directory,
             }
             throw;
         }
-        logIndexUpdated(metadataUs, tokenizeUs, work.stats);
+        logIndexResult(metadataUs, tokenizeUs, work.stats, initialized);
         return {work.stats, tokens};
     } catch (const std::exception& error) {
         logIndexFailed(error);
@@ -130,7 +140,7 @@ IndexUpdate SearchApplication::rebuildIndex(const std::filesystem::path& directo
         commitIndexSnapshot(std::move(work.documents), std::filesystem::absolute(directory).lexically_normal(),
                             rebuilt, snapshotPath_);
         notify({IndexStage::SaveCompleted, elapsedMicroseconds(saveStarted), {}, {}, 0, 0});
-        logIndexUpdated(metadataUs, tokenizeUs, work.stats);
+        logIndexResult(metadataUs, tokenizeUs, work.stats, /*initialized=*/true);
         snapshot_ = std::move(rebuilt);
         ready_ = true;
         loadError_.clear();
