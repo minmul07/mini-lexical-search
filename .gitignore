@@ -21,6 +21,7 @@ Testing/
 
 # Documents
 documents/
+documents_exclude/
 
 # Generated data
 .data/
