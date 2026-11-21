@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -22,7 +23,9 @@ namespace mini_lexical_search {
 namespace {
 
 constexpr std::string_view kMagic = "MLSI";
-constexpr std::uint32_t kFormatVersion = 4;
+constexpr std::uint32_t kLegacyFormatVersion = 4;
+constexpr std::uint32_t kFormatVersion = 5;
+constexpr std::uint32_t kNanosecondsPerSecond = 1'000'000'000;
 constexpr std::size_t kDigestSize = 32;
 constexpr std::size_t kU32Size = 4;
 constexpr std::size_t kDocumentHeaderSize = 5;
@@ -41,6 +44,11 @@ void writeU32(std::ostream& output, std::uint32_t value) {
         static_cast<char>((value >> 24) & 0xffu),
     };
     output.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+}
+
+void writeU64(std::ostream& output, std::uint64_t value) {
+    writeU32(output, static_cast<std::uint32_t>(value));
+    writeU32(output, static_cast<std::uint32_t>(value >> 32));
 }
 
 // unsigned Base-128: 하위 7비트부터 기록한다.
@@ -115,6 +123,12 @@ public:
             byte(0) | (byte(1) << 8) | (byte(2) << 16) | (byte(3) << 24);
         position_ += kU32Size;
         return value;
+    }
+
+    std::uint64_t u64() {
+        const auto low = u32();
+        const auto high = u32();
+        return low | (static_cast<std::uint64_t>(high) << 32);
     }
 
     std::uint32_t varUint32() {
@@ -207,6 +221,16 @@ void writeSnapshot(std::ostream& output,
             output.write(reinterpret_cast<const char*>(digest.data()),
                          static_cast<std::streamsize>(digest.size()));
         }
+        writeU8(output, document.fileState.has_value());
+        if (document.fileState) {
+            const auto& state = *document.fileState;
+            if (state.modifiedNanoseconds >= kNanosecondsPerSecond) {
+                throw std::runtime_error("invalid document modification time");
+            }
+            writeU64(output, state.size);
+            writeU64(output, std::bit_cast<std::uint64_t>(state.modifiedSeconds));
+            writeU32(output, state.modifiedNanoseconds);
+        }
     }
 
     std::vector<std::string> terms;
@@ -263,7 +287,7 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     BinaryReader reader(std::move(bytes));
     reader.expectMagic(kMagic);
     const auto version = reader.u32();
-    if (version != kFormatVersion) {
+    if (version != kFormatVersion && version != kLegacyFormatVersion) {
         reader.fail("unsupported version: " + std::to_string(version));
     }
 
@@ -272,8 +296,9 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
     if (!snapshot.root.is_absolute() || snapshot.root != snapshot.root.lexically_normal()) {
         reader.fail("index root must be a normalized absolute path");
     }
+    const bool hasStateField = version == kFormatVersion;
     const auto documentCount =
-        reader.boundedCount(reader.varUint32(), kDocumentHeaderSize, "document");
+        reader.boundedCount(reader.varUint32(), kDocumentHeaderSize + hasStateField, "document");
     snapshot.documents.reserve(documentCount);
     std::unordered_set<DocumentId> documentIds;
     std::unordered_set<std::string> documentPaths;
@@ -292,6 +317,20 @@ IndexSnapshot loadIndexSnapshot(const std::filesystem::path& input) {
             document.hash = toHex(reader.digest());
         } else {
             reader.fail("invalid hash length");
+        }
+        if (hasStateField) {
+            const auto present = reader.u8();
+            if (present == 1) {
+                const DocumentFileState state{reader.u64(),
+                                             std::bit_cast<std::int64_t>(reader.u64()),
+                                             reader.u32()};
+                if (state.modifiedNanoseconds >= kNanosecondsPerSecond) {
+                    reader.fail("invalid document modification time");
+                }
+                document.fileState = state;
+            } else if (present != 0) {
+                reader.fail("invalid document file state flag");
+            }
         }
         const std::filesystem::path path(document.path);
         const auto relative = path.lexically_relative(snapshot.root);

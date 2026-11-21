@@ -11,6 +11,12 @@ namespace mini_lexical_search {
 // 파일 수집·해시 완료 수와 전체 수를 전달한다. 전체 수는 수집 목록을 만든 뒤 알 수 있다.
 using DocumentCollectionProgress = std::function<void(std::size_t completed, std::size_t total)>;
 
+// 정규화된 절대 경로를 정렬하여 반환한다.
+std::vector<std::filesystem::path> collectDocumentPaths(const std::filesystem::path& directory);
+DocumentFileState readDocumentFileState(const std::filesystem::path& path);
+void verifyDocumentFileState(const std::filesystem::path& path, const DocumentFileState& expected);
+std::string hashDocumentFile(const std::filesystem::path& path);
+
 // .txt/.md 파일을 재귀적으로 수집하고 토큰화 없이 원본 바이트의 해시를 계산한다.
 std::vector<Document> collectDocuments(const std::filesystem::path& directory,
                                        const DocumentCollectionProgress& progress = {});

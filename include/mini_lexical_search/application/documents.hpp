@@ -30,7 +30,7 @@ struct IndexWork {
     // 갱신할 역색인 항목이 없으면 비어 있다.
     std::vector<DocumentId> removed;
     IndexStats stats;
-    bool changed = false;  // 저장된 테이블을 다시 기록해야 하는지 나타낸다.
+    bool changed = false;  // 파일 메타데이터만 바뀐 경우에도 저장이 필요하다.
 };
 
 struct TokenizeStats {
@@ -43,12 +43,13 @@ struct TokenizeStats {
 using TokenSink = std::function<void(DocumentId, std::uint32_t, const std::string&)>;
 
 // 선택한 디렉터리와 기존 문서 테이블을 비교하여 각 문서를 분류한다.
+// 기존 크기와 수정 시각이 일치하는 문서는 해시를 재사용한다.
 // 디스크 기록이나 토큰화는 수행하지 않는다.
 IndexWork prepareIndex(const std::filesystem::path& directory,
                        const std::vector<Document>& previous,
                        const DocumentProgress& progress = {});
 
-// JSON 파일에서 기존 테이블을 로드한 뒤 동일한 비교를 수행한다.
+// JSON 파일에서 기존 테이블을 로드한 뒤 모든 원문의 해시를 비교한다.
 // 파일이 없으면 빈 테이블로 취급하고 항상 변경된 작업으로 표시한다.
 IndexWork prepareIndex(const std::filesystem::path& directory,
                        const std::filesystem::path& output,

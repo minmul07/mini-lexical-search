@@ -180,6 +180,16 @@ void testSession(const fs::path& root) {
     require(read(snapshot) == saved && search(reopened, "alpha").size() == 2,
             "tokenization failure changed session");
 
+    write(transient, "transient\n");
+    requireFailure([&] {
+        reopened.index(documents, [&](const IndexProgress& event) {
+            if (event.stage == IndexStage::MetadataCompleted) write(transient, "different content\n");
+        });
+    }, "file changed after hashing must be rejected");
+    require(read(snapshot) == saved && search(reopened, "different").empty(),
+            "changed input was committed with stale metadata");
+    fs::remove(transient);
+
     write(documents / "a.md", "replacement\n");
     fs::create_directory(snapshot.string() + ".tmp");
     events.clear();

@@ -2,17 +2,20 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <system_error>
+
+#include <sys/stat.h>
 
 #include "json_internal.hpp"
 #include "mini_lexical_search/infrastructure/sha256.hpp"
 
 namespace mini_lexical_search {
-namespace {
 
-std::string hashFile(const std::filesystem::path& path) {
+std::string hashDocumentFile(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw std::runtime_error("cannot read document: " + path.string());
@@ -28,10 +31,27 @@ std::string hashFile(const std::filesystem::path& path) {
     return toHex(hasher.finish());
 }
 
-}  // namespace
+DocumentFileState readDocumentFileState(const std::filesystem::path& path) {
+    struct stat info{};
+    if (::lstat(path.c_str(), &info) == -1) {
+        const std::error_code error(errno, std::generic_category());
+        throw std::filesystem::filesystem_error("cannot inspect document", path, error);
+    }
+    if (!S_ISREG(info.st_mode) || info.st_size < 0) {
+        throw std::runtime_error("not a regular document: " + path.string());
+    }
+    return {static_cast<std::uint64_t>(info.st_size),
+            static_cast<std::int64_t>(info.st_mtim.tv_sec),
+            static_cast<std::uint32_t>(info.st_mtim.tv_nsec)};
+}
 
-std::vector<Document> collectDocuments(const std::filesystem::path& directory,
-                                       const DocumentCollectionProgress& progress) {
+void verifyDocumentFileState(const std::filesystem::path& path, const DocumentFileState& expected) {
+    if (readDocumentFileState(path) != expected) {
+        throw std::runtime_error("document changed during indexing: " + path.string());
+    }
+}
+
+std::vector<std::filesystem::path> collectDocumentPaths(const std::filesystem::path& directory) {
     if (!std::filesystem::is_directory(directory)) {
         throw std::runtime_error("not a directory: " + directory.string());
     }
@@ -47,6 +67,12 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory,
         }
     }
     std::sort(paths.begin(), paths.end());
+    return paths;
+}
+
+std::vector<Document> collectDocuments(const std::filesystem::path& directory,
+                                       const DocumentCollectionProgress& progress) {
+    const auto paths = collectDocumentPaths(directory);
     if (progress) progress(0, paths.size());
 
     std::vector<Document> documents;
@@ -55,7 +81,7 @@ std::vector<Document> collectDocuments(const std::filesystem::path& directory,
             throw std::runtime_error("too many documents");
         }
         documents.push_back({static_cast<DocumentId>(documents.size()),
-                             path.generic_string(), path.filename().string(), 0, hashFile(path)});
+                             path.generic_string(), path.filename().string(), 0, hashDocumentFile(path)});
         if (progress) progress(documents.size(), paths.size());
     }
     return documents;

@@ -220,11 +220,11 @@ documents/
 
 `start`의 기본 경로는 TUI이다. 인덱싱·검색 CLI는 `--no-tui`로 실행하고, 실행 중 표준 입력으로 `/index [디렉터리]`를 전달한다. 디렉터리를 생략하면 `./documents`를 사용한다. TUI의 `/index`는 홈 검색창 위치를 유지한 채 별도 스레드에서 인덱싱하고, 검색창 내부 진행률과 단계별 로그를 표시한다. 현재는 하위 디렉터리의 `.txt`·`.md` 일반 파일을 수집하여 Document 메타데이터를 저장하고, 추가·변경된 문서만 줄 단위로 토큰화하여 `tokenCount`를 기록한 뒤 Line-aware Inverted Index에 반영한다. 심볼릭 링크는 제외하고 첫 저장 시 절대 경로순으로 ID를 0부터 부여하며, 이후에는 기존 ID를 유지하고 새 문서는 이전 목록의 최대 ID 다음부터 부여한다. `path`는 절대 경로, `title`은 확장자를 포함한 파일명이다. `<검색어>`로 검색하고 `/exit` 또는 `/quit`로 종료한다. `-h`, `--help`, `-v`, `--version`, `--no-tui`는 실행 시 옵션으로 유지한다.
 
-인덱스 저장 형식은 **바이너리**로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 magic `MLSI`와 version 4, 절대 인덱싱 루트 및 헤더 뒤 unsigned Base-128 Varint 정수, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest로 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.bin` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`마다 스냅샷의 문서 테이블과 절대 경로·원문 SHA-256 `hash`를 비교한다. `n not updated, n updated, n added, n deleted`를 출력하며 동일 해시의 기존 문서는 유지한다. 문서와 루트에 변화가 없으면 스냅샷을 다시 쓰지 않고, 변화가 있으면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 토큰화 트리거는 문서 인덱싱과 동일하게 `hash`(또는 제목) 변경이며, 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 저장 경로의 부모 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 로드·인덱스 갱신·검색은 `.data/log.log`에 이벤트당 한 줄로 추가한다. 인덱스 단계와 검색의 화면 시간은 마이크로초를 측정해 소수점 셋째 자리 밀리초로 표시한다.
+인덱스 저장 형식은 **바이너리**로 한다. 문서 테이블과 역색인(토큰별 문서 ID, 등장 횟수, 줄 번호)을 magic `MLSI`와 version 5, 절대 인덱싱 루트, unsigned Base-128 Varint, 길이 기반 UTF-8 문자열, 32바이트 SHA-256 digest, 파일 크기와 수정 시각으로 저장하며, 문서 원문은 원본 파일에서 읽는다. 데이터 저장 위치는 현재 작업 디렉터리 기준 상대 경로 `.data/`로 한다. 앱은 시작할 때 `.data/index.bin` 스냅샷을 로드해 문서 테이블과 역색인을 메모리에 유지하고, `/index`는 절대 경로로 기존 문서를 찾고 파일 크기와 수정 시각이 모두 같으면 기존 해시를 재사용한다. 새 문서, 저장된 해시나 파일 메타데이터가 없는 문서, 크기나 수정 시각이 달라진 문서는 원문 SHA-256을 계산한다. 크기와 수정 시각이 모두 같은 내용 변경은 감지할 수 없다. `n not updated, n updated, n added, n deleted`를 출력하며, 해시가 같으면 `not updated`로 집계하고 파일 메타데이터만 갱신한다. 문서 정보나 루트가 바뀌면 문서 테이블과 역색인 전체를 하나의 스냅샷으로 저장한다. 이번 입력 목록에서 빠진 이전 문서는 삭제하므로 디렉터리를 바꾸면 이전 디렉터리의 문서도 삭제된다. 해시가 없는 기존 문서는 `updated`로 처리한다. 변경 없는 문서는 토큰화를 건너뛰고 기존 `tokenCount`와 Posting을 유지한다. 추가 문서와 기존 해시가 없거나 해시가 달라진 문서만 토큰화한다. 변경된 문서는 기존 Posting을 버리고 처음부터 다시 만든다. 스냅샷이 없으면 전체 문서를 한 번 토큰화해 새로 만든다. 손상된 스냅샷은 시작 시 다시 만들지 확인한 뒤에만 `./documents`로 교체한다. 확인 없이 호출한 `/index`는 그 실행에서 갱신을 거부하고 파일을 유지한다. 저장 경로의 부모 디렉터리가 없으면 생성을 시도하며 쓰기 권한이 필요하다. 로드·인덱스 갱신·검색은 `.data/log.log`에 이벤트당 한 줄로 추가한다. 인덱스 단계와 검색의 화면 시간은 마이크로초를 측정해 소수점 셋째 자리 밀리초로 표시한다.
 
 ```text
 magic            4 bytes  "MLSI"
-version          u32      4 (little-endian)
+version          u32      5 (little-endian)
 rootLen          varuint32
 root             rootLen bytes (정규화된 절대 인덱싱 경로, UTF-8)
 documentCount    varuint32
@@ -237,6 +237,10 @@ documents:
   tokenCount     varuint32
   hashLen        u8       0 또는 32
   hash           hashLen bytes (raw SHA-256 digest)
+  hasFileState   u8       0 또는 1 (v5)
+  fileSize       u64      바이트 (hasFileState가 1일 때)
+  mtimeSeconds   i64      Unix 시각의 초 (hasFileState가 1일 때)
+  mtimeNanos     u32      0–999,999,999 (hasFileState가 1일 때)
 termCount        varuint32
 terms (byte 순 오름차순):
   termLen        varuint32
@@ -249,7 +253,7 @@ terms (byte 순 오름차순):
     lineGaps     varuint32 * lineCount (첫 줄 번호는 절댓값)
 ```
 
-version은 고정 4바이트 little-endian이며, 이후 u32 필드는 unsigned Base-128 Varint(1~5바이트)이다. `hashLen`은 기존 u8을 유지한다. 읽기와 저장 모두 version 4의 Varint + Delta 형식만 지원한다. v1~v3 스냅샷은 거부하며, 기존 파일을 백업·제거한 뒤 `/index`로 다시 구축하거나 시작 시 재생성을 선택한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 문서와 루트에 변경이 없는 인덱싱은 기존 파일을 재저장하지 않는다. 루트만 바뀌거나 빈 디렉터리를 인덱싱한 경우도 루트를 저장한다. 루트·문서·역색인은 함께 원자적으로 저장·복구하며 절대 루트와 문서 경로 포함 관계를 검증한다. Varint의 잘림·오버플로·최소 길이가 아닌 표현은 거부한다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
+고정 길이 정수는 리틀엔디언, varuint32는 unsigned Base-128 Varint(1~5바이트)로 기록한다. v4와 v5를 읽고 v5로 저장한다. v4에는 `hasFileState`와 후속 필드가 없으므로 다음 `/index`에서 원문 해시를 확인한 뒤 파일 메타데이터를 채운다. v1~v3 스냅샷은 거부하며, 기존 파일을 백업·제거한 뒤 `/index`로 다시 구축하거나 시작 시 재생성을 선택한다. Posting 문서 ID는 term별, 줄 번호는 Posting별로 첫 절댓값 이후의 차이를 Varint로 저장한다. 첫 문서 ID 0 외에 0 차이를 허용하지 않으며 복원 시 덧셈 오버플로를 검사한다. 문서와 루트에 변경이 없는 인덱싱은 기존 파일을 재저장하지 않는다. 루트만 바뀌거나 빈 디렉터리를 인덱싱한 경우도 루트를 저장한다. 루트·문서·역색인은 함께 원자적으로 저장·복구하며 절대 루트와 문서 경로 포함 관계를 검증한다. Varint의 잘림·오버플로·최소 길이가 아닌 표현은 거부한다. 로더는 magic/version, 중복 문서 ID·경로·term, 존재하지 않는 문서를 참조하는 Posting, Posting 정렬·TF·줄 번호, 잘린 데이터와 trailing byte를 검증한다. 기존 `.data/index.json`은 읽지 않으며, 필요하면 `/index`로 새 스냅샷을 만든다.
 
 문서 메타데이터만 다루는 `saveDocuments`/`loadDocuments`와 `.data/documents.json` 배열 형식은 라이브러리 API와 테스트에서 그대로 유지한다.
 

@@ -27,7 +27,7 @@ ctest --test-dir build --output-on-failure
 | 질의 처리 | `query_processor_test` | 단일·`&` AND·공백 OR 검색, TF 합산·중복 제거, 문법 오류, 원본 Posting 보존 |
 | 순위 선정 | `top_k_test` | 점수·동점 순위, K 경계값, 전체 정렬 결과와의 일치 |
 | 매칭 행 | `matching_lines_test` | 원본 줄 번호·줄바꿈, 출력 한도, 잘못된 줄 목록·읽기 실패 |
-| 인덱싱·저장 | `indexer_test` | v4 루트 왕복·구버전 거부·루트 변경·형식 검증, 증분 갱신, 변경 없는 파일 보존, 저장 실패 복구 |
+| 인덱싱·저장 | `indexer_test` | v4 로드·v5 전환, 파일 메타데이터 왕복·형식 검증, 해시 생략·메타데이터만 갱신·재토큰화, 변경 없는 스냅샷 보존, 저장 실패 복구 |
 | 공통 Application | `search_application_test` | 인덱싱·재로드·검색, 진행 이벤트, 파일 트리순·중복 제거·페이지·펼치기, 오류 복구·세션 무효화, 뷰어 전체 원문 읽기·공백 경로·삭제/변경·검색 세션 보존 |
 | 검색 명령 | `search_commands_test` | TUI/no-TUI의 일반 텍스트·`&` AND·공백 OR 검색, 빈 입력·제거된 검색·탐색 명령 거부, 출력 형식·파일 건수·버튼 탐색·공백 경로·경계·읽기 경고·구조화된 피드백 |
 | TUI 결과 모델 | `result_view_test` | 1~3줄 발췌·셀 너비·토큰 강조·한글/이모지/결합 문자, 행 선택·스크롤·리사이즈·더보기 확장 시 스크롤 위치 유지·홈 초기화 |
@@ -71,7 +71,7 @@ CSV의 `index_and_save_ms`는 문서 수집·해시·토큰화·역색인 생성
 
 ## 검색 성능 측정
 
-격리된 작업 디렉터리에서 CLI `/index <문서 디렉터리>`로 v4 스냅샷을 먼저 만든다.
+격리된 작업 디렉터리에서 CLI `/index <문서 디렉터리>`로 v5 스냅샷을 먼저 만든다.
 
 ```bash
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release

@@ -47,6 +47,7 @@ std::uint8_t hexDigit(char character) {
 // index_binary.cpp의 현재 Varint + Delta 형식을 테스트에서 독립적으로 구성한다.
 struct SnapshotBytes {
     std::string bytes;
+    std::uint32_t version = 5;
 
     void u8(std::uint8_t value) { bytes.push_back(static_cast<char>(value)); }
 
@@ -54,6 +55,11 @@ struct SnapshotBytes {
         for (int shift = 0; shift < 32; shift += 8) {
             bytes.push_back(static_cast<char>((value >> shift) & 0xffu));
         }
+    }
+
+    void fixed64(std::uint64_t value) {
+        fixed32(static_cast<std::uint32_t>(value));
+        fixed32(static_cast<std::uint32_t>(value >> 32));
     }
 
     void u32(std::uint32_t value) {
@@ -78,14 +84,11 @@ struct SnapshotBytes {
         string("/" + path);
         string(title);
         u32(tokenCount);
-        if (hash.empty()) {
-            u8(0);
-            return;
-        }
-        u8(32);
+        u8(hash.empty() ? 0 : 32);
         for (std::size_t i = 0; i < hash.size(); i += 2) {
             u8(static_cast<std::uint8_t>((hexDigit(hash[i]) << 4) | hexDigit(hash[i + 1])));
         }
+        if (version >= 5) u8(0);
     }
 
     void posting(std::uint32_t documentId,
@@ -102,11 +105,14 @@ struct SnapshotBytes {
     }
 };
 
-SnapshotBytes snapshotHeader(std::uint32_t documentCount) {
+SnapshotBytes snapshotHeader(std::uint32_t documentCount,
+                             std::uint32_t version = 5,
+                             const std::string& root = "/") {
     SnapshotBytes snapshot;
     snapshot.bytes = "MLSI";
-    snapshot.fixed32(4);
-    snapshot.string("/");
+    snapshot.version = version;
+    snapshot.fixed32(version);
+    snapshot.string(root);
     snapshot.u32(documentCount);
     return snapshot;
 }
@@ -158,13 +164,42 @@ int main(int argc, char* argv[]) {
         const auto reloaded = mini_lexical_search::loadIndexSnapshot(snapshotPath);
         require(reloaded.root == fs::absolute(docs).lexically_normal() && reloaded.documents.size() == 2 &&
                     reloaded.documents[1].path == snapshot.documents[1].path &&
-                    reloaded.documents[1].hash == snapshot.documents[1].hash,
+                    reloaded.documents[1].hash == snapshot.documents[1].hash &&
+                    reloaded.documents[1].fileState &&
+                    reloaded.documents[1].fileState == snapshot.documents[1].fileState &&
+                    reloaded.documents[1].fileState->size == fs::file_size(docs / "b.md"),
                 "reload must preserve the document table");
         const auto* reloadedStructure = reloaded.index.find("자료구조");
         require(reloadedStructure != nullptr && reloadedStructure->size() == 2 &&
                     (*reloadedStructure)[0].termFrequency == 3 &&
                     (*reloadedStructure)[1].lines == std::vector<std::uint32_t>{1},
                 "reload must preserve postings");
+
+        // v4 stores the hash and postings without the file state.
+        const auto legacyDocs = root / "legacy";
+        fs::create_directory(legacyDocs);
+        std::ofstream(legacyDocs / "a.txt") << "a";
+        auto legacyBytes = snapshotHeader(1, 4, legacyDocs.generic_string());
+        legacyBytes.document(42, (legacyDocs / "a.txt").relative_path().generic_string(), "a.txt", 1,
+                             "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb");
+        legacyBytes.u32(1);
+        legacyBytes.string("a");
+        legacyBytes.u32(1);
+        legacyBytes.posting(42, 1, {1});
+        const auto legacyPath = root / "v4.bin";
+        std::ofstream(legacyPath, std::ios::binary) << legacyBytes.bytes;
+        auto legacy = mini_lexical_search::loadIndexSnapshot(legacyPath);
+        require(!legacy.documents[0].fileState && legacy.index.find("a"),
+                "v4 must load without file state");
+        const auto migration =
+            mini_lexical_search::updateIndexSnapshot(legacyDocs, legacy, legacyPath, tokenizer);
+        legacy = mini_lexical_search::loadIndexSnapshot(legacyPath);
+        require(migration.metadata.notUpdated == 1 && migration.tokens.documents == 0 &&
+                    read(legacyPath)[4] == 5 && legacy.documents[0].fileState &&
+                    legacy.documents[0].id == 42 && legacy.documents[0].tokenCount == 1 &&
+                    legacy.index.find("a") && legacy.index.find("a")->front().lines ==
+                        std::vector<std::uint32_t>{1},
+                "v4 migration must save file state and preserve indexed content");
 
         // The serialized binary format is deterministic.
         const auto tinyPath = root / "tiny.bin";
@@ -199,8 +234,36 @@ int main(int argc, char* argv[]) {
         require(read(snapshotPath) == before && fs::last_write_time(snapshotPath) == timestamp,
                 "unchanged run must not rewrite the snapshot");
 
+        const auto file = docs / "a.txt";
+        const auto originalText = read(file);
+        const auto originalMtime = fs::last_write_time(file);
+        std::ofstream(file) << std::string(originalText.size(), 'x');
+        fs::last_write_time(file, originalMtime);
+        update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
+        require(update.metadata.notUpdated == 2 && update.tokens.documents == 0 &&
+                    read(snapshotPath) == before && fs::last_write_time(snapshotPath) == timestamp,
+                "matching size and mtime must bypass content reads");
+        std::ofstream(file) << originalText;
+        fs::last_write_time(file, originalMtime - std::chrono::hours(1));
+        update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
+        snapshot = mini_lexical_search::loadIndexSnapshot(snapshotPath);
+        require(update.metadata.notUpdated == 2 && update.tokens.documents == 0 &&
+                    read(snapshotPath) != before &&
+                    snapshot.documents[0].hash == reloaded.documents[0].hash &&
+                    snapshot.documents[0].fileState != reloaded.documents[0].fileState &&
+                    snapshot.documents[0].tokenCount == 3,
+                "mtime-only change must save file state without retokenizing");
+        fs::last_write_time(snapshotPath, timestamp);
+        const auto touchedSnapshot = read(snapshotPath);
+        update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
+        require(update.metadata.notUpdated == 2 && update.tokens.documents == 0 &&
+                    read(snapshotPath) == touchedSnapshot && fs::last_write_time(snapshotPath) == timestamp,
+                "refreshed file state must be used after reload");
+
         // An edited document is rebuilt from scratch; other postings stay.
-        std::ofstream(docs / "a.txt") << "자료구조 변경\n";
+        const auto savedMtime = fs::last_write_time(file);
+        std::ofstream(file) << "자료구조 변경\n";
+        fs::last_write_time(file, savedMtime);
         update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
         require(update.metadata.updated == 1 && update.metadata.notUpdated == 1 &&
                     update.tokens.documents == 1 && update.tokens.tokens == 2,
@@ -216,7 +279,12 @@ int main(int argc, char* argv[]) {
         require(snapshot.index.find("알고리즘") != nullptr,
                 "postings of unchanged documents must survive");
         require(snapshot.documents[0].tokenCount == 2, "edited tokenCount must be rebuilt");
-
+        std::ofstream(file) << "자료구조 수정\n";
+        fs::last_write_time(file, savedMtime - std::chrono::hours(1));
+        update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
+        require(update.metadata.updated == 1 && update.tokens.documents == 1 &&
+                    snapshot.index.find("수정") && !snapshot.index.find("변경"),
+                "same-size edit with a different mtime must be reindexed");
         // A deleted document drops its postings without tokenization.
         fs::remove(docs / "b.md");
         update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
@@ -253,13 +321,13 @@ int main(int argc, char* argv[]) {
                 "failed save must not change the stored snapshot");
         require(snapshot.index.find("다시") == nullptr,
                 "failed save must roll back the in-memory postings");
-        require(snapshot.index.find("변경") != nullptr,
+        require(snapshot.index.find("수정") != nullptr,
                 "rollback must restore the previous postings");
         fs::remove_all(snapshotPath.string() + ".tmp");
         update = mini_lexical_search::updateIndexSnapshot(docs, snapshot, snapshotPath, tokenizer);
         require(update.metadata.updated == 1 && update.tokens.tokens == 1 &&
                     snapshot.index.find("다시") != nullptr &&
-                    snapshot.index.find("변경") == nullptr,
+                    snapshot.index.find("수정") == nullptr,
                 "retry after a failed save must rebuild the postings");
 
         // Damaged snapshots are rejected instead of being overwritten.
@@ -325,6 +393,31 @@ int main(int argc, char* argv[]) {
         badHash.u32(0);
         checkCorrupt("bad_hash_length", badHash.bytes);
 
+        auto state = snapshotHeader(1);
+        state.document(0, "a", "a", 0);
+        state.bytes.back() = 2;
+        state.u32(0);
+        checkCorrupt("bad_file_state_flag", state.bytes);
+        state.bytes.pop_back();
+        state.bytes.back() = 1;
+        state.fixed64(1ull << 40);
+        state.fixed64(static_cast<std::uint64_t>(-1));
+        checkCorrupt("truncated_file_state", state.bytes);
+        auto invalidTime = state;
+        invalidTime.fixed32(1'000'000'000);
+        invalidTime.u32(0);
+        checkCorrupt("invalid_file_state_time", invalidTime.bytes);
+        state.fixed32(999'999'999);
+        state.u32(0);
+        const auto statePath = root / "file-state.bin";
+        std::ofstream(statePath, std::ios::binary) << state.bytes;
+        const auto stateSnapshot = mini_lexical_search::loadIndexSnapshot(statePath);
+        require(stateSnapshot.documents[0].fileState ==
+                    mini_lexical_search::DocumentFileState{1ull << 40, -1, 999'999'999},
+                "file state binary encoding mismatch");
+        mini_lexical_search::saveIndexSnapshot(stateSnapshot, statePath);
+        require(read(statePath) == state.bytes, "file state round trip failed");
+
         auto unsortedPostings = snapshotHeader(2);
         unsortedPostings.document(0, "a", "a", 0);
         unsortedPostings.document(1, "b", "b", 0);
@@ -387,7 +480,7 @@ int main(int argc, char* argv[]) {
         checkCorrupt("huge_line_count", hugeLines.bytes);
 
         // 이전 형식과 알 수 없는 버전은 payload 파싱 전에 거부한다.
-        for (const auto unsupported : {0u, 1u, 2u, 3u, 5u, 0xffffffffu}) {
+        for (const auto unsupported : {0u, 1u, 2u, 3u, 6u, 0xffffffffu}) {
             SnapshotBytes fixture;
             fixture.bytes = "MLSI";
             fixture.fixed32(unsupported);
@@ -421,7 +514,7 @@ int main(int argc, char* argv[]) {
             require(roundTrip.index.find("term")->front().termFrequency == 0xffffffffu,
                     "boundary encoding failed");
         }
-        const std::string header = "MLSI\x04\x00\x00\x00\x01/"s;
+        const std::string header = "MLSI\x05\x00\x00\x00\x01/"s;
         checkCorrupt("truncated_varint", header + "\x80"s);
         checkCorrupt("overflow_varint", header + "\xff\xff\xff\xff\x10"s);
         checkCorrupt("long_varint", header + "\x80\x80\x80\x80\x80\x00"s);
